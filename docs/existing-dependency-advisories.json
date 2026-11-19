@@ -1,0 +1,824 @@
+[
+  {
+    "name": "fastapi",
+    "version": "0.115.12",
+    "license": null,
+    "license_expression": null,
+    "vulnerabilities": []
+  },
+  {
+    "name": "starlette",
+    "version": "0.46.2",
+    "license": null,
+    "license_expression": "BSD-3-Clause",
+    "vulnerabilities": [
+      {
+        "id": "GHSA-2c2j-9gv5-cj73",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-2c2j-9gv5-cj73",
+        "fixed_in": [
+          "0.47.2"
+        ]
+      },
+      {
+        "id": "GHSA-7f5h-v6xp-fcq8",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-7f5h-v6xp-fcq8",
+        "fixed_in": [
+          "0.49.1"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-161",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-161",
+        "fixed_in": [
+          "1.0.1"
+        ]
+      },
+      {
+        "id": "GHSA-86qp-5c8j-p5mr",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-86qp-5c8j-p5mr",
+        "fixed_in": [
+          "1.0.1"
+        ]
+      },
+      {
+        "id": "GHSA-wqp7-x3pw-xc5r",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-wqp7-x3pw-xc5r",
+        "fixed_in": [
+          "1.1.0"
+        ]
+      },
+      {
+        "id": "GHSA-x746-7m8f-x49c",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-x746-7m8f-x49c",
+        "fixed_in": [
+          "1.1.0"
+        ]
+      },
+      {
+        "id": "GHSA-82w8-qh3p-5jfq",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-82w8-qh3p-5jfq",
+        "fixed_in": [
+          "1.3.1"
+        ]
+      },
+      {
+        "id": "GHSA-jp82-jpqv-5vv3",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-jp82-jpqv-5vv3",
+        "fixed_in": [
+          "1.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-249",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-249",
+        "fixed_in": [
+          "1.3.1"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-248",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-248",
+        "fixed_in": [
+          "1.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-1942",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-1942",
+        "fixed_in": [
+          "0.49.1"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-1941",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-1941",
+        "fixed_in": [
+          "0.47.2"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2281",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2281",
+        "fixed_in": [
+          "1.1.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2280",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2280",
+        "fixed_in": [
+          "1.1.0"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "pymupdf",
+    "version": "1.23.16",
+    "license": "GNU AFFERO GPL 3.0",
+    "license_expression": null,
+    "vulnerabilities": []
+  },
+  {
+    "name": "pillow",
+    "version": "9.5.0",
+    "license": "HPND",
+    "license_expression": null,
+    "vulnerabilities": [
+      {
+        "id": "GHSA-3f63-hfp8-52jq",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-3f63-hfp8-52jq",
+        "fixed_in": [
+          "10.2.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2023-175",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2023-175",
+        "fixed_in": [
+          "10.0.1"
+        ]
+      },
+      {
+        "id": "GHSA-j7hp-h8jx-5ppr",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-j7hp-h8jx-5ppr",
+        "fixed_in": [
+          "10.0.1"
+        ]
+      },
+      {
+        "id": "PYSEC-2023-227",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2023-227",
+        "fixed_in": [
+          "10.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-8ghj-p4vj-mr35",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-8ghj-p4vj-mr35",
+        "fixed_in": [
+          "10.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-44wm-f244-xhp3",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-44wm-f244-xhp3",
+        "fixed_in": [
+          "10.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-wjx4-4jcj-g98j",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-wjx4-4jcj-g98j",
+        "fixed_in": [
+          "12.2.0"
+        ]
+      },
+      {
+        "id": "GHSA-r73j-pqj5-w3x7",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-r73j-pqj5-w3x7",
+        "fixed_in": [
+          "12.2.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-165",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-165",
+        "fixed_in": [
+          "12.2.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-457",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-457",
+        "fixed_in": [
+          "10.2.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-1793",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-1793",
+        "fixed_in": [
+          "10.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-1794",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-1794",
+        "fixed_in": [
+          "10.0.1"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2253",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2253",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2255",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2255",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2257",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2257",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2256",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2256",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2254",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2254",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-2874",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-2874",
+        "fixed_in": [
+          "12.2.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3453",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3453",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3451",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3451",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-62p4-gmf7-7g93",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-62p4-gmf7-7g93",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-5x94-69rx-g8h2",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-5x94-69rx-g8h2",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-8v84-f9pq-wr9x",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-8v84-f9pq-wr9x",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-phj9-mv4w-65pm",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-phj9-mv4w-65pm",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-45hq-cxwh-f6vc",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-45hq-cxwh-f6vc",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-xj96-63gp-2gmr",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-xj96-63gp-2gmr",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-6r8x-57c9-28j4",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-6r8x-57c9-28j4",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-fj7v-r99m-22gq",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-fj7v-r99m-22gq",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-jjj6-mw9f-p565",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-jjj6-mw9f-p565",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-vjc4-5qp5-m44j",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-vjc4-5qp5-m44j",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-9hw9-ch79-4vh6",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-9hw9-ch79-4vh6",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3454",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3454",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3495",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3495",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3496",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3496",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3494",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3494",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-3493",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-3493",
+        "fixed_in": [
+          "12.3.0"
+        ]
+      },
+      {
+        "id": "GHSA-p4wg-p73j-c528",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-p4wg-p73j-c528",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-65qm-jvmh-6pqg",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-65qm-jvmh-6pqg",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-58r4-6rv3-gfh8",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-58r4-6rv3-gfh8",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-pchr-8j38-3x4p",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-pchr-8j38-3x4p",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-q45j-58j2-45rg",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-q45j-58j2-45rg",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-462x-pgg6-55fp",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-462x-pgg6-55fp",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-c6hw-5grf-ff96",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-c6hw-5grf-ff96",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-vx6w-vv9f-6gvg",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-vx6w-vv9f-6gvg",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-7mwm-ghpf-9vrm",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-7mwm-ghpf-9vrm",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-w889-685w-c8fh",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-w889-685w-c8fh",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-27h8-gf7j-v5hc",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-27h8-gf7j-v5hc",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-fc9g-5qg7-mf45",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-fc9g-5qg7-mf45",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-22hg-r758-rrw9",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-22hg-r758-rrw9",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-74r2-7ff9-mjj2",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-74r2-7ff9-mjj2",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-xgh8-jp6q-p5x8",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-xgh8-jp6q-p5x8",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-254f-3936-288h",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-254f-3936-288h",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-jg86-v3jv-hrpm",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-jg86-v3jv-hrpm",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-f2g6-542v-9j58",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-f2g6-542v-9j58",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-5xm2-6676-qcp9",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-5xm2-6676-qcp9",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-gg2r-wvfm-q9rx",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-gg2r-wvfm-q9rx",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-332p-7hrc-92wf",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-332p-7hrc-92wf",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-24rc-8hj2-v98c",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-24rc-8hj2-v98c",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-4rm8-3hmm-39fg",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-4rm8-3hmm-39fg",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-mrfp-p49p-3hf2",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-mrfp-p49p-3hf2",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-3j72-p6qg-6xp7",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-3j72-p6qg-6xp7",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-g842-9rc4-69pw",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-g842-9rc4-69pw",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-9v9v-9qvf-h2hj",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-9v9v-9qvf-h2hj",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-g7cr-3p24-7wf7",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-g7cr-3p24-7wf7",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-p8hx-v2p6-rp84",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-p8hx-v2p6-rp84",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-5x8w-8jj5-q52h",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-5x8w-8jj5-q52h",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4327",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4327",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4326",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4326",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4340",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4340",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4343",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4343",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4334",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4334",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4337",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4337",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4341",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4341",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4330",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4330",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4338",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4338",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4335",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4335",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4331",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4331",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4332",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4332",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4329",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4329",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4363",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4363",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-xcvg-w56q-r89m",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-xcvg-w56q-r89m",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      },
+      {
+        "id": "GHSA-wqgw-9xfh-qf2g",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-wqgw-9xfh-qf2g",
+        "fixed_in": [
+          "13.0.0"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "sentence-transformers",
+    "version": "3.0.1",
+    "license": "Apache License 2.0",
+    "license_expression": null,
+    "vulnerabilities": [
+      {
+        "id": "GHSA-jhr6-gm9c-rqjv",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/GHSA-jhr6-gm9c-rqjv",
+        "fixed_in": [
+          "5.6.0"
+        ]
+      },
+      {
+        "id": "PYSEC-2026-4164",
+        "summary": null,
+        "link": "https://osv.dev/vulnerability/PYSEC-2026-4164",
+        "fixed_in": [
+          "5.6.0"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>切片预览 · 文档知识库</title>
+  <style>
+    :root { color-scheme: light; font-family: "DM Sans","Microsoft YaHei","PingFang SC",sans-serif; color: #1f332e; background: #f5f6f0; }
+    * { box-sizing: border-box; }
+    body,h1,h2,h3,p,ol,figure { margin: 0; }
+    a { color: #145b45; text-underline-offset: 3px; }
+    [hidden] { display: none !important; }
+    button,select { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: .52; }
+    :focus-visible { outline: 3px solid #378a6c; outline-offset: 3px; }
+    .wrap { width: min(1060px, calc(100% - 40px)); margin: auto; }
+    header { border-bottom: 1px solid #d6dfd7; background: #fffefa; }
+    .bar { min-height: 67px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 19px; font-weight: 750; text-decoration: none; color: #1f332e; }
+    .books { display: flex; align-items: end; justify-content: center; gap: 3px; width: 35px; height: 35px; padding-bottom: 9px; border-radius: 9px; background: #145b45; }
+    .books i { display: block; width: 4px; height: 15px; border-radius: 1px; background: #f3f5da; }
+    .books i:nth-child(2) { height: 18px; }
+    .books i:last-child { height: 13px; transform: rotate(-11deg); }
+    .bar > a:last-child { font-size: 14px; }
+    .library-context { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 14px; font-size: 14px; }
+    #library-name { font-weight: 650; color: #145b45; }
+    main { padding: 34px 0 64px; }
+    h1 { font-size: clamp(28px,4vw,40px); letter-spacing: -.04em; }
+    h2 { font-size: 20px; }
+    .grid { display: grid; grid-template-columns: minmax(215px, .7fr) minmax(0, 1.7fr); gap: 18px; margin-top: 20px; align-items: start; }
+    .panel { min-width: 0; padding: clamp(17px,2.5vw,27px); border: 1px solid #d6dfd7; background: #fffefa; border-radius: 13px; }
+    .sidebar { background: #eaf0e6; border-color: #cfdbce; }
+    label { display: block; font-weight: 650; margin-bottom: 7px; }
+    select { width: 100%; padding: 10px; border: 1px solid #a3b5a8; border-radius: 6px; color: #1f332e; background: white; }
+    .filename { font-size: 17px; overflow-wrap: anywhere; margin: 14px 0 8px; }
+    .status { display: inline-block; font-size: 13px; font-weight: 650; border-radius: 5px; background: #dde4db; padding: 4px 9px; }
+    .status.preview { background: #d6e6f6; color: #294c74; }
+    .status.processing { background: #fff1d8; color: #775600; }
+    .status.ready { background: #d2e8d9; color: #225b38; }
+    .status.failed { background: #f8e4df; color: #923d30; }
+    .counts,.fine { font-size: 13px; line-height: 1.65; color: #546760; }
+    .counts,.explanation,.feedback:not(:empty) { margin-top: 10px; }
+    .explanation,.feedback { line-height: 1.65; font-size: 14px; overflow-wrap: anywhere; }
+    .error { color: #943d32; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 16px; }
+    .button { min-height: 39px; padding: 8px 14px; background: #fffefa; color: #145b45; border: 1px solid #aabdb0; border-radius: 7px; font-weight: 650; }
+    .button.primary { background: #145b45; color: white; border-color: #145b45; }
+    .button.primary:hover:enabled { background: #0c4735; }
+    .button:hover:enabled { background: #f0f4ed; }
+    .text-button { border: 0; background: transparent; color: #145b45; padding: 6px 0; }
+    .head,.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .head { margin-bottom: 14px; }
+    #chunks { padding: 0; list-style: none; }
+    .chunk { padding: 17px 0; border-top: 1px solid #d6dfd7; overflow-wrap: anywhere; }
+    .chunk h3 { font-size: 16px; }
+    .chunk p { margin: 7px 0; }
+    .body { white-space: pre-wrap; line-height: 1.7; font-size: 15px; }
+    .chunk a,.chunk summary { color: #145b45; font-size: 14px; }
+    .chunk details { margin-top: 9px; }
+    .chunk summary { cursor: pointer; }
+    figure { margin-top: 8px; }
+    figure img { display: block; max-width: 100%; max-height: 450px; }
+    .image { border: 1px solid #d6dfd7; display: inline-block; position: relative; max-width: 100%; }
+    .box { position: absolute; pointer-events: none; border: 2px solid #ad5600; background: #ffcc5524; }
+    .empty { border-top: 1px solid #d6dfd7; padding: 15px 0; }
+    .pager { border-top: 1px solid #d6dfd7; padding-top: 13px; }
+    @media(max-width: 730px) { .grid { grid-template-columns: 1fr; } main { padding-top: 20px; } .wrap { width: calc(100% - 26px); } }
+  </style>
+</head>
+<body>
+  <header><div class="bar wrap">
+    <a id="home" class="brand" href="/"><span class="books" aria-hidden="true"><i></i><i></i><i></i></span>文档知识库</a>
+    <a id="documents-link" href="/#documents">返回文档列表</a>
+  </div></header>
+  <main class="wrap">
+    <div class="library-context"><span id="library-name"></span><a id="library-home" href="/">返回当前库</a></div>
+    <h1>切片预览</h1>
+    <div class="grid">
+      <section class="panel sidebar" aria-label="文档选择和入库状态">
+        <div id="chooser" hidden><label for="document">选择文档</label><select id="document"></select></div>
+        <h2 id="filename" class="filename">文档</h2>
+        <span id="status" class="status" hidden></span>
+        <p id="counts" class="counts"></p>
+        <p id="explanation" class="explanation"></p>
+        <p id="failure" class="feedback error" role="status"></p>
+        <div class="controls">
+          <button type="button" id="confirm" class="button primary" disabled>确认上传并入库</button>
+          <button type="button" id="retry" class="button" hidden>重试处理</button>
+          <button type="button" id="refresh" class="text-button">刷新状态</button>
+        </div>
+        <p id="feedback" class="feedback" role="status"></p>
+      </section>
+      <section class="panel" aria-labelledby="title">
+        <div class="head"><h2 id="title">文档切片</h2><span id="range" class="fine"></span></div>
+        <ol id="chunks"></ol><p id="empty" class="empty fine">正在读取切片…</p>
+        <nav id="pager" class="pager" aria-label="切片分页" hidden>
+          <button type="button" class="button" id="prev">上一页</button>
+          <span class="fine" id="page"></span>
+          <button type="button" class="button" id="next">下一页</button>
+        </nav>
+      </section>
+    </div>
+  </main>
+  <script>
+    'use strict';
+    const el = id => document.getElementById(id);
+    const API_BASE = /^\/presales(?:\/|$)/.test(location.pathname) ? '/presales' : '';
+    const libraryName = API_BASE ? '售前知识库' : '原知识库';
+    el('library-name').textContent = libraryName + ' · 切片核对';
+    el('home').href = API_BASE + '/';
+    el('documents-link').href = API_BASE + '/#documents';
+    el('library-home').href = API_BASE + '/';
+    document.title = '切片预览 · ' + libraryName;
+    const labels = {pending: '等待处理', processing: '处理中', preview: '待确认入库', ready: '已入库', failed: '处理失败'};
+    const uuid = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
+    const pageSize = 20;
+    const params = new URLSearchParams(location.search);
+    const requested = [...new Set(params.getAll('document_id'))];
+    const names = new Map();
+    let active = '', offset = 0, serial = 0, timer, snapshot = null, loading = false, submitting = false;
+
+    function node(tag, text, className) {
+      const item = document.createElement(tag);
+      if (text != null) item.textContent = text;
+      if (className) item.className = className;
+      return item;
+    }
+
+    async function api(url, options) {
+      const controller = new AbortController();
+      const deadline = setTimeout(() => controller.abort(), 60000);
+      try {
+        const response = await fetch(API_BASE + url, {...options, signal: controller.signal});
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(typeof data?.detail === 'string' ? data.detail : '请求失败（HTTP ' + response.status + '）。');
+        if (!data) throw new Error('服务未返回有效的数据。');
+        return data;
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error('请求超时，请刷新查看文档当前状态。');
+        if (error instanceof TypeError) throw new Error('无法连接服务，请刷新重试。');
+        throw error;
+      } finally { clearTimeout(deadline); }
+    }
+
+    function feedback(text, error = false) {
+      el('feedback').textContent = text;
+      el('feedback').classList.toggle('error', error);
+    }
+
+    function controls() {
+      const busy = loading || submitting;
+      const confirmable = snapshot?.status === 'preview' && snapshot.can_confirm === true && uuid.test(snapshot.preview_token);
+      el('confirm').disabled = busy || !confirmable;
+      el('confirm').textContent = snapshot?.status === 'ready' ? '已入库' : '确认上传并入库';
+      el('refresh').disabled = busy;
+      el('document').disabled = submitting;
+      el('retry').hidden = snapshot?.status !== 'failed';
+      el('retry').disabled = busy;
+      el('prev').disabled = busy || !snapshot || offset === 0;
+      el('next').disabled = busy || !snapshot || offset + pageSize >= snapshot.chunk_count;
+    }
+
+    function linkUrl(value, id) {
+      if (!value || typeof value !== 'string') return null;
+      try {
+        const url = new URL(value, location.origin);
+        if (!['http:', 'https:'].includes(url.protocol) || !url.pathname.startsWith(API_BASE + '/api/documents/' + id + '/')) return null;
+        return location.origin + url.pathname + url.search + url.hash;
+      } catch { return null; }
+    }
+
+    function link(label, href) {
+      const result = node('a', label);
+      result.href = href;
+      result.target = '_blank';
+      result.rel = 'noopener noreferrer';
+      return result;
+    }
+
+    function locationText(loc) {
+      const parts = [];
+      if (loc.format === 'docx') {
+        if (Number.isInteger(loc.table)) parts.push('表格 ' + loc.table);
+        if (Number.isInteger(loc.row)) parts.push('第 ' + loc.row + ' 行');
+        if (Number.isInteger(loc.cell)) parts.push('单元格 ' + loc.cell);
+        if (Number.isInteger(loc.paragraph)) parts.push('段落 ' + loc.paragraph);
+        if (Number.isInteger(loc.image)) parts.push('图片 ' + loc.image);
+      }
+      if (Number.isInteger(loc.page)) parts.push('第 ' + loc.page + ' 页');
+      if (Number.isInteger(loc.line_start)) {
+        const end = loc.line_end && loc.line_end !== loc.line_start ? '–' + loc.line_end : '';
+        parts.push('第 ' + loc.line_start + end + ' 行');
+      }
+      if (loc.heading) parts.push(Array.isArray(loc.heading) ? loc.heading.join(' / ') : loc.heading);
+      if (Array.isArray(loc.bbox) && loc.bbox.length === 4 && loc.bbox.every(Number.isFinite)) {
+        parts.push('页面坐标（' + loc.bbox.map(v => Math.round(v * 10) / 10).join(', ') + '）');
+      }
+      return parts.join(' · ');
+    }
+
+    function illustration(label, url, loc) {
+      const figure = node('figure');
+      const caption = node('figcaption');
+      caption.append(link('打开' + label, url));
+      const frame = node('div', null, 'image');
+      const image = node('img');
+      image.alt = label;
+      image.loading = 'lazy';
+      frame.append(image);
+      if (loc && loc.page_width > 0 && loc.page_height > 0 && Array.isArray(loc.bbox)
+          && loc.bbox.length === 4 && loc.bbox.every(Number.isFinite)) {
+        const [x0, y0, x1, y1] = loc.bbox;
+        const box = node('span', null, 'box');
+        box.style.left = 100 * x0 / loc.page_width + '%';
+        box.style.top = 100 * y0 / loc.page_height + '%';
+        box.style.width = 100 * (x1 - x0) / loc.page_width + '%';
+        box.style.height = 100 * (y1 - y0) / loc.page_height + '%';
+        frame.append(box);
+      }
+      image.addEventListener('error', () => frame.replaceWith(node('p', '图像加载失败，可通过上方链接查看。', 'fine')));
+      image.src = url;
+      figure.append(caption, frame);
+      return figure;
+    }
+
+    function chunkItem(chunk, number, id) {
+      const item = node('li', null, 'chunk');
+      const loc = chunk.location || {};
+      item.append(node('h3', '切片 ' + number + ' · ' + (chunk.kind === 'image' ? '图片分析' : '原文片段')));
+      item.append(node('p', locationText(loc), 'fine'), node('p', chunk.text, 'body'));
+      const source = linkUrl(chunk.source_url, id);
+      if (source) item.append(link('查看来源文档', source));
+      const asset = linkUrl(chunk.asset_url, id);
+      const page = linkUrl(loc.preview_url, id);
+      if (asset || page) {
+        const details = node('details');
+        details.append(node('summary', '查看' + (loc.page && page ? (asset && asset !== page ? '原图与所在页' : '所在页') : '原图')));
+        details.addEventListener('toggle', () => {
+          if (!details.open || details.querySelector('figure')) return;
+          if (asset && asset !== page) details.append(illustration('原图', asset, null));
+          if (page) details.append(illustration(loc.page ? '所在页' : '原图', page, loc.page ? loc : null));
+        });
+        item.append(details);
+      }
+      return item;
+    }
+
+    function clearView(message) {
+      snapshot = null;
+      el('status').hidden = true;
+      el('counts').textContent = '';
+      el('explanation').textContent = '';
+      el('failure').textContent = '';
+      el('chunks').replaceChildren();
+      el('empty').textContent = message;
+      el('empty').hidden = false;
+      el('range').textContent = '';
+      el('pager').hidden = true;
+      controls();
+    }
+
+    function render(data) {
+      snapshot = data;
+      el('filename').textContent = data.filename;
+      const option = [...el('document').options].find(item => item.value === active);
+      if (option) option.textContent = data.filename;
+      const status = el('status');
+      status.hidden = false;
+      const known = Object.hasOwn(labels, data.status);
+      status.textContent = known ? labels[data.status] : '状态未知';
+      status.className = known ? 'status ' + data.status : 'status';
+      el('counts').textContent = data.chunk_count + ' 个切片 · ' + data.image_count + ' 张图片';
+      el('failure').textContent = data.error || '';
+      const help = {preview: '请核对切片与来源位置。确认后开始建立索引，完成后即可参与检索。',
+        pending: '文档已进入队列，状态会自动刷新。', processing: '系统正在处理该文档，状态会自动刷新。',
+        ready: '这份文档已可检索。', failed: '处理未完成。查看错误原因后可重试。'};
+      el('explanation').textContent = known ? help[data.status] : '';
+      el('chunks').replaceChildren(...data.chunks.map((chunk, i) => chunkItem(chunk, offset + i + 1, active)));
+      el('empty').hidden = data.chunks.length > 0;
+      el('empty').textContent = (data.status === 'pending' || data.status === 'processing') ? '正在等待可预览的切片…' : '此页暂无切片。';
+      el('range').textContent = data.chunks.length ? '第 ' + (offset + 1) + '–' + (offset + data.chunks.length) + ' 个' : '';
+      el('pager').hidden = data.chunk_count <= pageSize;
+      el('page').textContent = '第 ' + (Math.floor(offset / pageSize) + 1) + ' / ' + Math.max(1, Math.ceil(data.chunk_count / pageSize)) + ' 页';
+      controls();
+    }
+
+    async function refresh() {
+      if (!active) return;
+      clearTimeout(timer);
+      const request = ++serial;
+      loading = true;
+      controls();
+      try {
+        const data = await api('/api/documents/' + active + '/preview?offset=' + offset + '&limit=' + pageSize);
+        if (request !== serial) return;
+        if (data.id !== active || !Array.isArray(data.chunks) || !Number.isInteger(data.chunk_count)
+            || !Number.isInteger(data.image_count) || data.offset !== offset) throw new Error('服务返回的预览数据与当前文档或页码不符。');
+        if (offset && offset >= data.chunk_count) {
+          offset = 0;
+          await refresh();
+          return;
+        }
+        render(data);
+        feedback('');
+        if (data.status === 'pending' || data.status === 'processing') timer = setTimeout(refresh, 3000);
+      } catch (error) {
+        if (request === serial) {
+          clearView('未能读取切片。');
+          feedback(error.message, true);
+        }
+      } finally {
+        if (request === serial) { loading = false; controls(); }
+      }
+    }
+
+    async function submit(action) {
+      if (loading || submitting || !snapshot) return;
+      const confirm = action === 'confirm';
+      if (confirm ? el('confirm').disabled : snapshot.status !== 'failed') return;
+      clearTimeout(timer);
+      submitting = true;
+      controls();
+      feedback(confirm ? '正在提交确认…' : '正在提交重试…');
+      let message = '';
+      try {
+        const options = {method: 'POST'};
+        if (confirm) {
+          options.headers = {'Content-Type': 'application/json'};
+          options.body = JSON.stringify({preview_token: snapshot.preview_token});
+        }
+        await api('/api/documents/' + active + '/' + action, options);
+        offset = 0;
+      } catch (error) {
+        message = error.message;
+      } finally {
+        await refresh();
+        submitting = false;
+        controls();
+        if (message) feedback(message, true);
+      }
+    }
+
+    function choose(id) {
+      active = id;
+      offset = 0;
+      el('document').value = id;
+      el('filename').textContent = names.get(id) || '文档';
+      clearView('正在读取切片…');
+      feedback('');
+      const url = new URL(location.href);
+      if (el('document').options.length > 1) url.searchParams.set('active', id);
+      history.replaceState(null, '', url);
+      refresh();
+    }
+
+    async function initialize() {
+      let ids = requested;
+      if (ids.some(id => !uuid.test(id))) {
+        clearView('文档编号无效，请返回文档列表重新打开。');
+        el('refresh').disabled = true;
+        return;
+      }
+      try {
+        const listing = await api('/api/documents');
+        for (const doc of listing.documents) names.set(doc.id, doc.filename);
+        if (!ids.length) ids = [...names.keys()];
+      } catch (error) {
+        if (!ids.length) { clearView('未能读取文档列表。'); feedback(error.message, true); return; }
+      }
+      if (!ids.length) { clearView('暂无可预览的文档，请返回首页上传资料。'); return; }
+      el('document').replaceChildren(...ids.map((id, i) => {
+        const option = node('option', names.get(id) || '文档 ' + (i + 1));
+        option.value = id;
+        return option;
+      }));
+      el('chooser').hidden = ids.length <= 1;
+      choose(ids.includes(params.get('active')) ? params.get('active') : ids[0]);
+    }
+
+    el('document').addEventListener('change', event => choose(event.target.value));
+    el('refresh').addEventListener('click', () => active ? refresh() : initialize());
+    el('prev').addEventListener('click', () => { offset -= pageSize; refresh(); });
+    el('next').addEventListener('click', () => { offset += pageSize; refresh(); });
+    el('confirm').addEventListener('click', () => submit('confirm'));
+    el('retry').addEventListener('click', () => submit('retry'));
+    initialize();
+  </script>
+</body>
+</html>
