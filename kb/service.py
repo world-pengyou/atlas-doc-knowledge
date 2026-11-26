@@ -10,11 +10,13 @@ from urllib.parse import quote
 import jieba
 import psycopg
 
+from kb.chunking import build_chunks, split_text
 from kb.models import ModelClient, ModelError
 from kb.parsers import parse_document
 from kb.search_dedup import deduplicate
 from kb.errors import StorageCheckError, StoragePathError
 from kb.storage import clean_deletion_files, deletion_paths
+from kb.structure import build_units, from_rows, tree as unit_tree
 
 
 logger = logging.getLogger(__name__)
@@ -30,29 +32,6 @@ def query_tokens(text):
     # Escape lexemes using the tsquery grammar, then OR terms for coarse recall.
     words = dict.fromkeys(tokenize(text))
     return " | ".join("'" + word.replace("'", "''").replace("\\", "\\\\") + "'" for word in words)
-
-
-def split_text(text, size=700, overlap=80):
-    """Keep Chinese sentence boundaries, with a hard limit for unpunctuated text.
-
-    Adapted from EduRAG's ChineseRecursiveTextSplitter separator strategy.
-    This standalone form avoids importing the legacy application's configuration.
-    """
-    start = 0
-    while start < len(text):
-        end = min(start + size, len(text))
-        if end < len(text):
-            candidates = [text.rfind(mark, start + size // 2, end)
-                          for mark in ("\n", "。", "！", "？", ";", "；")]
-            boundary = max(candidates)
-            if boundary >= 0:
-                end = boundary + 1
-        value = text[start:end].strip()
-        if value:
-            yield value, start, end
-        if end == len(text):
-            break
-        start = max(start + 1, end - overlap)
 
 
 class KnowledgeService:
@@ -78,6 +57,9 @@ class KnowledgeService:
             "source_url": source_url, "score": row.get("score"),
             "similarity": row.get("similarity"),
             "channels": row.get("channels", []),
+            "heading": row.get("heading") or "",
+            "heading_level": row.get("heading_level"),
+            "unit_id": str(row["unit_id"]) if row.get("unit_id") else None,
         }
 
     def search(self, query, limit=None):
@@ -117,6 +99,136 @@ class KnowledgeService:
                 source["ordinal"] = row["ordinal"]
             result["sources"].append(source)
         return result
+
+    REPORT_STYLES = {
+        "report": "把资料整合成一份结构化报告：先给出结论摘要，再按主题分节展开，"
+                  "最后列出风险、待确认事项与建议。",
+        "summary": "把资料整合成要点摘要：给出 3 到 8 条要点，每条 1 到 2 句，按重要性排序。",
+        "qa": "直接回答提出的问题：先给结论，再给依据与细节，最后说明资料尚未覆盖的部分。",
+    }
+    REPORT_SYSTEM_PROMPT = (
+        "你是企业知识库的资料整合助手，只能依据给出的编号资料作答，不得引入资料之外的事实。\n"
+        "1. 每个结论后面用 [编号] 标注依据，可以同时标注多个编号。\n"
+        "2. 不同资料冲突时并列说明冲突，不要自行取舍。\n"
+        "3. 资料没有覆盖的内容写“资料未覆盖”，不要编造数字、日期、人名或承诺。\n"
+        "4. 使用简体中文输出 Markdown 正文，不要复述这些规则，也不要写“以下是”之类的开场白。"
+    )
+    MAX_REPORT_CONTEXT = 12_000
+    MAX_REPORT_CHUNK = 1_500
+    MAX_SOURCE_SNIPPET = 500
+
+    def report(self, query, style="report", top_k=8):
+        """Retrieve then integrate: a model report, or an extractive digest."""
+        query = query.strip()
+        if not query or len(query) > 500:
+            raise ValueError("查询需包含 1 到 500 个字符")
+        if style not in self.REPORT_STYLES:
+            raise ValueError("生成风格仅支持 report、summary 或 qa")
+        if not 1 <= top_k <= 12:
+            raise ValueError("top_k 需在 1 到 12 之间")
+        results = self.search(query, limit=top_k)["results"]
+        base = {"query": query, "style": style, "sources": [], "model": None,
+                "usage": {}, "note": None}
+        if not results:
+            return {**base, "mode": "empty",
+                    "report": "知识库中没有检索到与该主题相关的内容。可以更换说法，或先上传资料。"}
+        sources = [self._report_source(number, result)
+                   for number, result in enumerate(results, 1)]
+        if self._chat_configured():
+            try:
+                text, usage = self.models.generate(
+                    self.REPORT_SYSTEM_PROMPT, self._report_prompt(query, style, results))
+                return {**base, "mode": "model", "sources": sources, "report": text,
+                        "model": self.settings.chat_model, "usage": usage}
+            except ModelError as error:
+                logger.warning("Report generation failed (%s)", type(error).__name__)
+                note = "生成模型调用失败（" + str(error) + "），已改为抽取式整合。"
+        else:
+            note = "未配置生成模型（CHAT_BASE_URL、CHAT_MODEL），当前为抽取式整合。"
+        return {**base, "mode": "extractive", "sources": sources, "note": note,
+                "report": self._extractive_report(results)}
+
+    def _chat_configured(self):
+        return bool(getattr(self.settings, "chat_base_url", "")
+                    and getattr(self.settings, "chat_model", ""))
+
+    def _report_source(self, number, result):
+        text = " ".join(result["text"].split())
+        if len(text) > self.MAX_SOURCE_SNIPPET:
+            text = text[:self.MAX_SOURCE_SNIPPET] + "…"
+        location = result.get("location") or {}
+        return {"citation": number, "document_id": result["document_id"],
+                "filename": result["filename"], "heading": result.get("heading") or "",
+                "location": location, "location_label": self._location_label(location),
+                "text": text, "source_url": result.get("source_url"),
+                "similarity": result.get("similarity")}
+
+    @staticmethod
+    def _location_label(location):
+        def span(first, last, single, ranged):
+            if isinstance(first, int) and isinstance(last, int) and last != first:
+                return ranged % (first, last)
+            return single % first
+
+        parts = []
+        if location.get("format") in {"docx", "doc"}:
+            table, row = location.get("table"), location.get("row")
+            if isinstance(table, int) and isinstance(row, int):
+                label = "表格 %d %s" % (
+                    table, span(row, location.get("row_end"), "第 %d 行", "第 %d–%d 行"))
+                cell = location.get("cell")
+                if isinstance(cell, int):
+                    label += " " + span(cell, location.get("cell_end"), "单元格 %d", "单元格 %d–%d")
+                parts.append(label)
+            elif isinstance(location.get("paragraph"), int):
+                parts.append(span(location["paragraph"], location.get("paragraph_end"),
+                                  "段落 %d", "段落 %d–%d"))
+            if isinstance(location.get("image"), int):
+                parts.append("图片 %d" % location["image"])
+        page = location.get("page")
+        if isinstance(page, int):
+            parts.append(span(page, location.get("page_end"), "第 %d 页", "第 %d–%d 页"))
+        first = location.get("line_start")
+        if isinstance(first, int):
+            parts.append(span(first, location.get("line_end"), "第 %d 行", "第 %d–%d 行"))
+        return " · ".join(parts)
+
+    def _report_prompt(self, query, style, results):
+        blocks = []
+        used = 0
+        for number, result in enumerate(results, 1):
+            text = " ".join(result["text"].split())
+            if len(text) > self.MAX_REPORT_CHUNK:
+                text = text[:self.MAX_REPORT_CHUNK] + "…"
+            header = "[%d] 文档：%s" % (number, result["filename"])
+            if result.get("heading"):
+                header += "｜章节：" + result["heading"]
+            label = self._location_label(result.get("location") or {})
+            if label:
+                header += "｜位置：" + label
+            block = header + "\n" + text
+            if used + len(block) > self.MAX_REPORT_CONTEXT:
+                break
+            blocks.append(block)
+            used += len(block)
+        return ("任务：" + self.REPORT_STYLES[style] + "\n主题或问题：" + query
+                + "\n\n资料片段：\n" + "\n\n".join(blocks))
+
+    def _extractive_report(self, results):
+        lines = ["## 资料整合", "", "按检索结果摘录、归类原文要点，未做改写。", ""]
+        grouped = {}
+        for number, result in enumerate(results, 1):
+            grouped.setdefault(result["document_id"], []).append((number, result))
+        for items in grouped.values():
+            lines.append("### 《" + items[0][1]["filename"] + "》")
+            for number, result in items:
+                heading = result.get("heading") or "正文"
+                text = " ".join(result["text"].split())
+                if len(text) > 240:
+                    text = text[:240] + "…"
+                lines.append("- **%s**：%s [%d]" % (heading, text, number))
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def delete_document(self, document_id):
         def validate(source_path):
@@ -179,8 +291,10 @@ class KnowledgeService:
             raise ValueError("文档不存在")
         if document["status"] == "ready":
             result = self.document_detail(document_id, offset, limit)
+            units = self.database.units(document_id)
         else:
-            chunks = self._read_preview(document) if document.get("preview_path") else []
+            chunks, units = (self._read_preview(document)
+                             if document.get("preview_path") else ([], []))
             rows = [{**chunk, "document_id": document_id, "filename": document["filename"]}
                     for chunk in chunks[offset:offset + limit]]
             result = {"id": str(document_id), "filename": document["filename"],
@@ -188,9 +302,19 @@ class KnowledgeService:
                       "chunk_count": document["chunk_count"], "offset": offset,
                       "chunks": [self.result(row) for row in rows]}
         result.update({"image_count": document["image_count"],
+                       "unit_count": len(units),
                        "preview_token": str(document["preview_token"]) if document.get("preview_token") else None,
                        "can_confirm": document["status"] == "preview" and document.get("confirmed_at") is None})
         return result
+
+    def document_structure(self, document_id):
+        document = self.database.document(document_id)
+        if not document:
+            raise ValueError("文档不存在")
+        units = from_rows(self.database.units(document_id))
+        return {"id": str(document_id), "filename": document["filename"],
+                "status": document["status"], "unit_count": len(units),
+                "units": unit_tree(units)}
 
     def _read_preview(self, document):
         preview_root = (self.settings.data_dir / "previews" / str(document["id"])).resolve()
@@ -214,7 +338,22 @@ class KnowledgeService:
                     or not isinstance(chunk.get("location"), dict)
                     or "asset_name" not in chunk):
                 raise ValueError("切片预览内容无效")
-        return chunks
+        units = snapshot.get("units") or []
+        if not isinstance(units, list):
+            raise ValueError("切片预览结构无效")
+        keys = set()
+        for unit in units:
+            if (not isinstance(unit, dict) or not isinstance(unit.get("key"), str)
+                    or not isinstance(unit.get("title"), str)
+                    or not isinstance(unit.get("level"), int)
+                    or not isinstance(unit.get("ordinal"), int)
+                    or not isinstance(unit.get("block_start"), int)
+                    or not isinstance(unit.get("block_end"), int)):
+                raise ValueError("切片预览结构无效")
+            keys.add(unit["key"])
+        if any(chunk.get("unit_key") and chunk["unit_key"] not in keys for chunk in chunks):
+            raise ValueError("切片预览结构单元缺失")
+        return chunks, units
 
     def _prepare_preview(self, document, stop):
         document_id = str(document["id"])
@@ -225,27 +364,30 @@ class KnowledgeService:
         if not source.is_relative_to(self.settings.data_dir):
             raise ValueError("文档来源路径无效")
         blocks = parse_document(source, asset_dir)
+        units, block_units = build_units(blocks)
         descriptions = self._describe_images(blocks, asset_dir, stop)
-        chunks = []
+        texts = []
         image_count = 0
         for index, block in enumerate(blocks):
             self._check_stop(stop)
             content = block.text
-            asset_name = None
             if block.kind == "image":
                 image_count += 1
-                image = Path(block.asset_path)
-                asset_name = attempt_id + "/" + image.name
                 content = "\n".join(filter(None, [block.text, "图片模型解析\n" + descriptions[index]]))
-            for part, start, end in split_text(content):
-                location = {**block.location, "char_start": start, "char_end": end}
-                if location.get("preview"):
-                    location["preview"] = attempt_id + "/" + location["preview"]
-                if "line_start" in location and block.kind == "text":
-                    location["line_start"] = block.location["line_start"] + content[:start].count("\n")
-                    location["line_end"] = block.location["line_start"] + content[:end].count("\n")
-                chunks.append({"text": part, "kind": block.kind, "location": location,
-                               "asset_name": asset_name})
+            texts.append(content)
+        chunks = []
+        for chunk in build_chunks(blocks, texts, block_units):
+            block = blocks[chunk["block_start"]]
+            location = chunk["location"]
+            if location.get("preview"):
+                location["preview"] = attempt_id + "/" + location["preview"]
+            asset_name = None
+            if block.kind == "image":
+                asset_name = attempt_id + "/" + Path(block.asset_path).name
+            chunk["asset_name"] = asset_name
+            chunk["heading"] = " / ".join(block.heading_path)
+            chunk["heading_level"] = block.heading_level or (len(block.heading_path) or None)
+            chunks.append(chunk)
         if not chunks:
             raise ValueError("文档没有可入库内容")
         preview_dir = self.settings.data_dir / "previews" / document_id
@@ -253,7 +395,8 @@ class KnowledgeService:
         preview_file = preview_dir / (attempt_id + ".json")
         temporary = preview_file.with_suffix(".tmp")
         temporary.write_text(json.dumps({"document_id": document_id, "preview_token": attempt_id,
-                                         "chunks": chunks}, ensure_ascii=False), encoding="utf-8")
+                                         "chunks": chunks, "units": units},
+                                        ensure_ascii=False), encoding="utf-8")
         os.replace(temporary, preview_file)
         self._check_stop(stop)
         self.database.save_preview(document_id, document["claim_token"],
@@ -294,13 +437,15 @@ class KnowledgeService:
                 if not isinstance(value, str) or not value.strip():
                     raise ModelError("图片识别结果为空")
                 descriptions[index] = value
-                temporary = cache_file.with_name(cache_file.name + "." + asset_dir.name + ".tmp")
+                # Keep the scratch name short: without LongPathsEnabled, Windows
+                # rejects paths of 260 characters and the cache key is already 64.
+                temporary = cache_file.with_name(cache_file.name + "." + os.urandom(6).hex() + ".tmp")
                 temporary.write_text(json.dumps({"description": value}, ensure_ascii=False), encoding="utf-8")
                 os.replace(temporary, cache_file)
         return descriptions
 
     def _index_preview(self, document, stop):
-        chunks = self._read_preview(document)
+        chunks, units = self._read_preview(document)
         for start in range(0, len(chunks), 16):
             self._check_stop(stop)
             batch = chunks[start:start + 16]
@@ -309,7 +454,8 @@ class KnowledgeService:
                 chunk["embedding"] = vector
                 chunk["tokens"] = " ".join(tokenize(chunk["text"]))
         self._check_stop(stop)
-        self.database.publish(document["id"], document["claim_token"], chunks, document["image_count"])
+        self.database.publish(document["id"], document["claim_token"], chunks,
+                              document["image_count"], units)
 
     @staticmethod
     def _check_stop(stop):

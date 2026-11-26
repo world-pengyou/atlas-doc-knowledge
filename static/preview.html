@@ -106,7 +106,7 @@
     'use strict';
     const el = id => document.getElementById(id);
     const API_BASE = /^\/presales(?:\/|$)/.test(location.pathname) ? '/presales' : '';
-    const libraryName = API_BASE ? '售前知识库' : '原知识库';
+    const libraryName = API_BASE ? '售前知识库' : '售后知识库';
     el('library-name').textContent = libraryName + ' · 切片核对';
     el('home').href = API_BASE + '/';
     el('documents-link').href = API_BASE + '/#documents';
@@ -184,10 +184,17 @@
         if (Number.isInteger(loc.table)) parts.push('表格 ' + loc.table);
         if (Number.isInteger(loc.row)) parts.push('第 ' + loc.row + ' 行');
         if (Number.isInteger(loc.cell)) parts.push('单元格 ' + loc.cell);
-        if (Number.isInteger(loc.paragraph)) parts.push('段落 ' + loc.paragraph);
+        if (Number.isInteger(loc.paragraph)) {
+          const end = Number.isInteger(loc.paragraph_end) && loc.paragraph_end !== loc.paragraph
+            ? '–' + loc.paragraph_end : '';
+          parts.push('段落 ' + loc.paragraph + end);
+        }
         if (Number.isInteger(loc.image)) parts.push('图片 ' + loc.image);
       }
-      if (Number.isInteger(loc.page)) parts.push('第 ' + loc.page + ' 页');
+      if (Number.isInteger(loc.page)) {
+        const end = Number.isInteger(loc.page_end) && loc.page_end !== loc.page ? '–' + loc.page_end : '';
+        parts.push('第 ' + loc.page + end + ' 页');
+      }
       if (Number.isInteger(loc.line_start)) {
         const end = loc.line_end && loc.line_end !== loc.line_start ? '–' + loc.line_end : '';
         parts.push('第 ' + loc.line_start + end + ' 行');
@@ -228,6 +235,9 @@
       const item = node('li', null, 'chunk');
       const loc = chunk.location || {};
       item.append(node('h3', '切片 ' + number + ' · ' + (chunk.kind === 'image' ? '图片分析' : '原文片段')));
+      if (typeof chunk.heading === 'string' && chunk.heading) {
+        item.append(node('p', '所属章节：' + chunk.heading, 'fine'));
+      }
       item.append(node('p', locationText(loc), 'fine'), node('p', chunk.text, 'body'));
       const source = linkUrl(chunk.source_url, id);
       if (source) item.append(link('查看来源文档', source));
@@ -270,7 +280,8 @@
       const known = Object.hasOwn(labels, data.status);
       status.textContent = known ? labels[data.status] : '状态未知';
       status.className = known ? 'status ' + data.status : 'status';
-      el('counts').textContent = data.chunk_count + ' 个切片 · ' + data.image_count + ' 张图片';
+      el('counts').textContent = data.chunk_count + ' 个切片 · ' + data.image_count + ' 张图片'
+        + (data.unit_count ? ' · ' + data.unit_count + ' 个知识单元' : '');
       el('failure').textContent = data.error || '';
       const help = {preview: '请核对切片与来源位置。确认后开始建立索引，完成后即可参与检索。',
         pending: '文档已进入队列，状态会自动刷新。', processing: '系统正在处理该文档，状态会自动刷新。',

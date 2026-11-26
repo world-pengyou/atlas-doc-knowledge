@@ -65,6 +65,28 @@ class Database:
                 ALTER TABLE kb002.documents ADD CONSTRAINT documents_status_check
                     CHECK (status IN ('pending', 'processing', 'preview', 'ready', 'failed'))
             """)
+            # One row per section of the parsed structure tree. parent_id makes
+            # the tree, and the same rows double as the parent/child units that
+            # chunks attach to, so no section text is stored twice.
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS kb002.units (
+                    id bigserial PRIMARY KEY,
+                    document_id uuid NOT NULL REFERENCES kb002.documents(id) ON DELETE CASCADE,
+                    parent_id bigint REFERENCES kb002.units(id) ON DELETE CASCADE,
+                    unit_key text NOT NULL,
+                    title text NOT NULL DEFAULT '',
+                    level integer NOT NULL DEFAULT 0,
+                    ordinal integer NOT NULL DEFAULT 0,
+                    block_start integer NOT NULL DEFAULT 0,
+                    block_end integer NOT NULL DEFAULT 0,
+                    page_start integer,
+                    page_end integer,
+                    chunk_count integer NOT NULL DEFAULT 0,
+                    created_at timestamptz NOT NULL DEFAULT now(),
+                    UNIQUE (document_id, unit_key)
+                )
+            """)
+            connection.execute("CREATE INDEX IF NOT EXISTS kb002_units_document ON kb002.units(document_id)")
             # dimension is a validated integer. Values and identifiers from uploads
             # never enter SQL source text.
             connection.execute(f"""
@@ -81,7 +103,14 @@ class Database:
                     UNIQUE (document_id, ordinal)
                 )
             """)
+            connection.execute("""
+                ALTER TABLE kb002.chunks
+                    ADD COLUMN IF NOT EXISTS unit_id bigint REFERENCES kb002.units(id) ON DELETE SET NULL,
+                    ADD COLUMN IF NOT EXISTS heading text NOT NULL DEFAULT '',
+                    ADD COLUMN IF NOT EXISTS heading_level integer
+            """)
             connection.execute("CREATE INDEX IF NOT EXISTS kb002_chunks_document ON kb002.chunks(document_id)")
+            connection.execute("CREATE INDEX IF NOT EXISTS kb002_chunks_unit ON kb002.chunks(unit_id)")
             connection.execute("CREATE INDEX IF NOT EXISTS kb002_chunks_text ON kb002.chunks USING gin(search_vector)")
             connection.execute("""
                 CREATE TABLE IF NOT EXISTS kb002.deletions (
@@ -103,6 +132,8 @@ class Database:
             self._check_model(connection)
             connection.execute("SELECT id, preview_path, preview_token, confirmed_at FROM kb002.documents LIMIT 0")
             connection.execute("SELECT id FROM kb002.chunks LIMIT 0")
+            connection.execute("SELECT unit_id, heading, heading_level FROM kb002.chunks LIMIT 0")
+            connection.execute("SELECT id, parent_id, unit_key, level FROM kb002.units LIMIT 0")
             connection.execute("SELECT document_id, source_path FROM kb002.deletions LIMIT 0")
 
     def list_documents(self):
@@ -161,6 +192,7 @@ class Database:
             validate_source(document["source_path"])
             removed = connection.execute("DELETE FROM kb002.chunks WHERE document_id = %s",
                                          (document_id,)).rowcount
+            connection.execute("DELETE FROM kb002.units WHERE document_id = %s", (document_id,))
             job = connection.execute("""
                 INSERT INTO kb002.deletions (document_id, filename, source_path, removed_chunks)
                 VALUES (%s, %s, %s, %s) RETURNING *
@@ -234,7 +266,15 @@ class Database:
                 WHERE id = %s AND status = 'processing' AND claim_token = %s
             """, (message[:500], document_id, claim_token))
 
-    def publish(self, document_id, claim_token, chunks, image_count):
+    def units(self, document_id):
+        with self.connect() as connection:
+            return connection.execute("""
+                SELECT id, parent_id, unit_key, title, level, ordinal, block_start,
+                    block_end, page_start, page_end, chunk_count
+                FROM kb002.units WHERE document_id = %s ORDER BY ordinal
+            """, (document_id,)).fetchall()
+
+    def publish(self, document_id, claim_token, chunks, image_count, units=()):
         with self.connect() as connection:
             owner = connection.execute("""
                 SELECT id FROM kb002.documents WHERE id = %s AND status = 'processing'
@@ -243,14 +283,36 @@ class Database:
             if not owner:
                 raise InterruptedError("任务所有权已变化，当前处理结果停止发布")
             connection.execute("DELETE FROM kb002.chunks WHERE document_id = %s", (document_id,))
+            connection.execute("DELETE FROM kb002.units WHERE document_id = %s", (document_id,))
+            identifiers = {}
+            for unit in units:
+                row = connection.execute("""
+                    INSERT INTO kb002.units
+                        (document_id, parent_id, unit_key, title, level, ordinal,
+                         block_start, block_end, page_start, page_end)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
+                """, (document_id, identifiers.get(unit.get("parent_key")), unit["key"],
+                      unit["title"], unit["level"], unit["ordinal"], unit["block_start"],
+                      unit["block_end"], unit.get("page_start"), unit.get("page_end"))).fetchone()
+                identifiers[unit["key"]] = row["id"]
             with connection.cursor() as cursor:
                 cursor.executemany("""
                     INSERT INTO kb002.chunks
-                        (document_id, ordinal, text, kind, location, asset_name, embedding, search_vector)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s::vector, to_tsvector('simple', %s))
+                        (document_id, ordinal, text, kind, location, asset_name, heading,
+                         heading_level, unit_id, embedding, search_vector)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::vector, to_tsvector('simple', %s))
                 """, [(document_id, index, chunk["text"], chunk["kind"], Jsonb(chunk["location"]),
-                        chunk["asset_name"], json.dumps(chunk["embedding"]), chunk["tokens"])
+                        chunk["asset_name"], chunk.get("heading") or "",
+                        chunk.get("heading_level"), identifiers.get(chunk.get("unit_key")),
+                        json.dumps(chunk["embedding"]), chunk["tokens"])
                        for index, chunk in enumerate(chunks)])
+            connection.execute("""
+                UPDATE kb002.units u SET chunk_count = counted.total
+                FROM (SELECT unit_id, count(*) AS total FROM kb002.chunks
+                      WHERE document_id = %s AND unit_id IS NOT NULL
+                      GROUP BY unit_id) counted
+                WHERE u.id = counted.unit_id
+            """, (document_id,))
             connection.execute("""
                 UPDATE kb002.documents SET status = 'ready', error = NULL,
                     chunk_count = %s, image_count = %s, claim_token = NULL,
@@ -263,13 +325,15 @@ class Database:
         query_vector = json.dumps(vector)
         with self.connect() as connection:
             semantic = connection.execute("""
-                SELECT c.id, c.ordinal, c.document_id, d.filename, c.text, c.kind, c.location, c.asset_name,
+                SELECT c.id, c.ordinal, c.document_id, d.filename, c.text, c.kind, c.location,
+                    c.asset_name, c.heading, c.heading_level, c.unit_id,
                     c.embedding <=> %s::vector AS distance
                 FROM kb002.chunks c JOIN kb002.documents d ON d.id = c.document_id
                 WHERE d.status = 'ready' ORDER BY distance, c.id LIMIT %s
             """, (query_vector, candidate_count)).fetchall()
             lexical = connection.execute("""
-                SELECT c.id, c.ordinal, c.document_id, d.filename, c.text, c.kind, c.location, c.asset_name,
+                SELECT c.id, c.ordinal, c.document_id, d.filename, c.text, c.kind, c.location,
+                    c.asset_name, c.heading, c.heading_level, c.unit_id,
                     c.embedding <=> %s::vector AS distance,
                     ts_rank_cd(c.search_vector, q.query) AS lexical_score
                 FROM kb002.chunks c JOIN kb002.documents d ON d.id = c.document_id

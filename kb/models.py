@@ -21,6 +21,7 @@ class ModelClient:
 
     MAX_IMAGE_BYTES = 20 * 1024 * 1024
     MAX_DESCRIPTION_CHARS = 24_000
+    MAX_REPORT_CHARS = 20_000
     EMBEDDING_BATCH_SIZE = 16
     VISION_BATCH_SIZE = 10
     VISION_SYSTEM_PROMPT = (
@@ -247,6 +248,59 @@ class ModelClient:
                 mapped[image_id] = description.strip()
             descriptions.extend(mapped[image_id] for image_id in image_ids)
         return descriptions
+
+    @property
+    def chat_configured(self) -> bool:
+        return bool(getattr(self.settings, "chat_base_url", "")
+                    and getattr(self.settings, "chat_model", ""))
+
+    def generate(self, system_prompt: str, user_prompt: str,
+                 max_tokens: int | None = None) -> tuple[str, dict]:
+        """Return one chat completion and its usage, without echoing prompts."""
+        self._validate_timeout()
+        base_url = getattr(self.settings, "chat_base_url", "")
+        model = getattr(self.settings, "chat_model", "")
+        self._validate_endpoint("生成", base_url, model)
+        result = self._post(
+            base_url,
+            getattr(self.settings, "chat_api_key", ""),
+            "chat/completions",
+            {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "max_tokens": max_tokens or getattr(self.settings, "chat_max_tokens", 2000),
+            },
+        )
+        return self._completion_text(result), self._completion_usage(result)
+
+    @classmethod
+    def _completion_text(cls, result: dict) -> str:
+        try:
+            content = result["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError):
+            raise ModelError("生成模型返回缺少正文内容。") from None
+        if isinstance(content, list):
+            # Some gateways return content parts instead of a plain string.
+            content = "".join(part.get("text", "") for part in content
+                              if isinstance(part, dict))
+        if not isinstance(content, str) or not content.strip():
+            raise ModelError("生成模型返回了空内容。")
+        content = content.strip()
+        if len(content) > cls.MAX_REPORT_CHARS:
+            raise ModelError("生成模型输出超出长度限制。")
+        return content
+
+    @staticmethod
+    def _completion_usage(result: dict) -> dict:
+        usage = result.get("usage")
+        if not isinstance(usage, dict):
+            return {}
+        keys = ("prompt_tokens", "completion_tokens", "total_tokens")
+        return {key: usage[key] for key in keys
+                if isinstance(usage.get(key), int) and not isinstance(usage[key], bool)}
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         self.validate()

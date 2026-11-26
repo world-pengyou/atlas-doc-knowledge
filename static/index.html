@@ -105,6 +105,25 @@
     figure img { display: block; max-width: 100%; max-height: 470px; }
     .hit-box { position: absolute; border: 2px solid #b25a00; background: #ffcc5524; pointer-events: none; }
     .sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+    .modes { display: flex; gap: 6px; margin-top: 20px; }
+    .mode { min-height: 34px; padding: 6px 15px; border: 1px solid #bccbc1; border-radius: 7px; background: transparent; color: var(--green); font-weight: 650; }
+    .mode[aria-selected="true"] { background: var(--green); border-color: var(--green); color: white; }
+    .style-picker { border: 1px solid var(--line); border-radius: 6px; padding: 8px 6px; background: white; color: var(--ink); }
+    .report { margin-top: 8px; line-height: 1.78; font-size: 15px; overflow-wrap: anywhere; }
+    .report h3 { margin: 18px 0 8px; font-size: 17px; }
+    .report h4 { margin: 14px 0 6px; font-size: 15px; }
+    .report p { margin: 8px 0; }
+    .report ul, .report ol { margin: 8px 0; padding-left: 22px; }
+    .report li { margin: 4px 0; }
+    .report strong { font-weight: 700; }
+    .md-table { width: 100%; margin: 10px 0; border-collapse: collapse; font-size: 14px; }
+    .md-table th, .md-table td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+    .md-table th { background: #eef3ec; font-weight: 700; }
+    .report-head { margin-top: 24px; }
+    .sources { padding-left: 22px; margin: 10px 0 0; }
+    .sources li { margin: 10px 0; font-size: 14px; }
+    .sources li:target { background: #fff3c4; }
+    .cite { font-weight: 700; text-decoration: none; }
     @media (max-width: 760px) {
       .wrap { width: min(100% - 28px, 660px); }
       main { padding-top: 20px; }
@@ -123,22 +142,37 @@
   <header>
     <div class="bar wrap">
       <a class="brand" href="#search"><span class="books" aria-hidden="true"><i></i><i></i><i></i></span>文档知识库</a>
-      <nav aria-label="页面导航"><a href="#upload">上传资料</a><a href="#documents">文档列表</a></nav>
+      <nav aria-label="页面导航"><a href="#upload">上传资料</a><a href="#documents">文档列表</a><a href="#report">生成报告</a></nav>
     </div>
   </header>
   <main class="wrap">
     <nav class="libraries" aria-label="选择知识库">
-      <a id="library-default" href="/">原知识库</a>
+      <a id="library-default" href="/">售后知识库</a>
       <a id="library-presales" href="/presales/">售前知识库</a>
       <span id="library-note" class="fine"></span>
     </nav>
     <section id="search" class="hero" aria-labelledby="search-title">
       <h1 id="search-title">检索知识库</h1>
+      <div class="modes" role="tablist" aria-label="输出方式">
+        <button id="mode-search" class="mode" type="button" role="tab" aria-selected="true">检索原文</button>
+        <button id="mode-report" class="mode" type="button" role="tab" aria-selected="false">生成报告</button>
+      </div>
       <form id="search-form" class="search-form" role="search">
         <label for="query" class="sr">搜索词或问题</label>
         <span class="magnifier" aria-hidden="true"></span>
         <input id="query" name="query" type="search" placeholder="输入关键词、术语或问题" maxlength="500" required>
         <button id="search-button" class="button primary" type="submit">检索</button>
+      </form>
+      <form id="report-form" class="search-form" role="search" hidden>
+        <label for="report-query" class="sr">报告主题或问题</label>
+        <span class="magnifier" aria-hidden="true"></span>
+        <input id="report-query" name="report-query" type="search" placeholder="输入要整合的主题，例如：视频监控系统的技术要求" maxlength="500" required>
+        <select id="report-style" class="style-picker" aria-label="输出形式">
+          <option value="report">整合报告</option>
+          <option value="summary">要点摘要</option>
+          <option value="qa">问答</option>
+        </select>
+        <button id="report-button" class="button primary" type="submit">生成</button>
       </form>
       <p id="search-notice" class="notice" role="status"></p>
     </section>
@@ -146,6 +180,13 @@
       <div class="panel-head"><h2 id="results-title">检索结果</h2><span id="result-count" class="fine"></span></div>
       <ol id="hit-list" class="hits"></ol>
       <p id="no-hits" class="fine empty" hidden>未找到相关内容。可更换关键词，或检查文档是否已入库。</p>
+    </section>
+    <section id="report" class="panel" aria-labelledby="report-title" hidden>
+      <div class="panel-head"><h2 id="report-title">生成结果</h2><span id="report-meta" class="fine"></span></div>
+      <p id="report-note" class="notice" role="status"></p>
+      <div id="report-body" class="report"></div>
+      <h3 id="report-sources-title" class="report-head" hidden>引用来源</h3>
+      <ol id="report-sources" class="sources"></ol>
     </section>
     <div class="sections">
       <section id="upload" class="panel" aria-labelledby="upload-title">
@@ -157,9 +198,9 @@
               <button id="choose" class="button" type="button">选择文件</button>
               <button id="choose-folder" class="link-button" type="button">选择资料文件夹</button>
             </div>
-            <p class="fine">支持 PDF、Word（.docx）、Markdown 和配套图片。Word 可解析正文、表格和嵌图；Markdown 图片位于子目录时，请选择资料文件夹以保留引用路径。</p>
+            <p class="fine">支持 PDF、Word（.doc/.docx）、Markdown 和配套图片。Word 可解析正文、表格和嵌图；Markdown 图片位于子目录时，请选择资料文件夹以保留引用路径。</p>
           </div>
-          <input id="files" type="file" name="files" multiple accept=".pdf,.docx,.md,.markdown,.png,.jpg,.jpeg,.webp" hidden>
+          <input id="files" type="file" name="files" multiple accept=".pdf,.doc,.docx,.md,.markdown,.png,.jpg,.jpeg,.webp" hidden>
           <input id="folder" type="file" webkitdirectory multiple hidden>
           <ul id="file-list" class="files" aria-label="待上传文件"></ul>
           <div class="actions">
@@ -192,7 +233,7 @@
     'use strict';
     const byId = id => document.getElementById(id);
     const API_BASE = /^\/presales(?:\/|$)/.test(location.pathname) ? '/presales' : '';
-    const libraryName = API_BASE ? '售前知识库' : '原知识库';
+    const libraryName = API_BASE ? '售前知识库' : '售后知识库';
     byId(API_BASE ? 'library-presales' : 'library-default').setAttribute('aria-current', 'page');
     byId('library-note').textContent = '当前库的资料独立上传、检索和管理';
     byId('search-title').textContent = '检索' + libraryName;
@@ -207,6 +248,8 @@
     let documentsPending = false;
     let refreshVersion = 0;
     let searchVersion = 0;
+    let reportVersion = 0;
+    const reportModeLabels = {model: '生成模型', extractive: '抽取式整合', empty: '无相关资料'};
     const deletingIds = new Set();
 
     function node(tag, value, className) {
@@ -275,7 +318,7 @@
     byId('choose').addEventListener('click', () => byId('files').click());
     byId('choose-folder').addEventListener('click', () => byId('folder').click());
     byId('folder').addEventListener('change', event => {
-      const supported = Array.from(event.target.files).filter(file => /\.(pdf|docx|md|markdown|png|jpe?g|webp)$/i.test(file.name));
+      const supported = Array.from(event.target.files).filter(file => /\.(pdf|docx?|md|markdown|png|jpe?g|webp)$/i.test(file.name));
       addFiles(supported);
       if (!supported.length) notice('upload-notice', '选中的文件夹中没有支持的资料文件。');
       event.target.value = '';
@@ -460,14 +503,22 @@
 
     function locationLabel(location) {
       const parts = [];
-      if (location.format === 'docx') {
+      if (location.format === 'docx' || location.format === 'doc') {
         if (Number.isInteger(location.table)) parts.push('表格 ' + location.table);
         if (Number.isInteger(location.row)) parts.push('第 ' + location.row + ' 行');
         if (Number.isInteger(location.cell)) parts.push('单元格 ' + location.cell);
-        if (Number.isInteger(location.paragraph)) parts.push('段落 ' + location.paragraph);
+        if (Number.isInteger(location.paragraph)) {
+          const end = Number.isInteger(location.paragraph_end) && location.paragraph_end !== location.paragraph
+            ? '–' + location.paragraph_end : '';
+          parts.push('段落 ' + location.paragraph + end);
+        }
         if (Number.isInteger(location.image)) parts.push('图片 ' + location.image);
       }
-      if (location.page != null) parts.push('第 ' + location.page + ' 页');
+      if (location.page != null) {
+        const end = Number.isInteger(location.page_end) && location.page_end !== location.page
+          ? '–' + location.page_end : '';
+        parts.push('第 ' + location.page + end + ' 页');
+      }
       if (location.line_start != null) {
         const range = location.line_end != null && location.line_end !== location.line_start;
         parts.push('第 ' + location.line_start + (range ? '–' + location.line_end : '') + ' 行');
@@ -540,7 +591,11 @@
         ? (hit.merged_chunk_count > 1 ? '代表切片相似度 ' : '相似度 ') + hit.similarity.toFixed(3) : '';
       const label = [isImage ? '图片分析' : '原文片段', locationLabel(location), similarity].filter(Boolean).join(' · ');
       meta.append(node('h3', hit.filename), node('span', label, 'fine'));
-      item.append(meta, node('p', hit.text, 'hit-text'));
+      item.append(meta);
+      if (typeof hit.heading === 'string' && hit.heading) {
+        item.append(node('p', '所属章节：' + hit.heading, 'fine'));
+      }
+      item.append(node('p', hit.text, 'hit-text'));
       const source = localUrl(hit.source_url);
       if (source) item.append(sourceLink(source, '查看来源文档'));
       const entries = [];
@@ -607,6 +662,168 @@
         if (version === searchVersion) notice('search-notice', error.message, true);
       } finally {
         if (version === searchVersion) button.disabled = false;
+      }
+    });
+
+    function setMode(reporting) {
+      byId('mode-search').setAttribute('aria-selected', String(!reporting));
+      byId('mode-report').setAttribute('aria-selected', String(reporting));
+      byId('search-form').hidden = reporting;
+      byId('report-form').hidden = !reporting;
+      (reporting ? byId('report-query') : byId('query')).focus();
+    }
+    byId('mode-search').addEventListener('click', () => setMode(false));
+    byId('mode-report').addEventListener('click', () => setMode(true));
+
+    function inlineFragment(text) {
+      const fragment = document.createDocumentFragment();
+      const value = String(text);
+      const pattern = /(\*\*[^*]+\*\*|\[\d+\])/g;
+      let last = 0;
+      for (const match of value.matchAll(pattern)) {
+        if (match.index > last) fragment.append(document.createTextNode(value.slice(last, match.index)));
+        const token = match[0];
+        if (token.startsWith('**')) {
+          fragment.append(node('strong', token.slice(2, -2)));
+        } else {
+          const number = token.slice(1, -1);
+          const link = node('a', '[' + number + ']', 'cite');
+          link.href = '#cite-' + number;
+          fragment.append(link);
+        }
+        last = match.index + token.length;
+      }
+      if (last < value.length) fragment.append(document.createTextNode(value.slice(last)));
+      return fragment;
+    }
+
+    function markdownNodes(text) {
+      const nodes = [];
+      for (const raw of String(text).replace(/\r\n/g, '\n').split(/\n{2,}/)) {
+        const lines = raw.split('\n').filter(line => line.trim());
+        if (!lines.length) continue;
+        const heading = lines.length === 1 && lines[0].match(/^(#{1,4})\s+(.*)$/);
+        if (heading) {
+          const element = node(heading[1].length <= 2 ? 'h3' : 'h4');
+          element.append(inlineFragment(heading[2]));
+          nodes.push(element);
+          continue;
+        }
+        if (lines.length >= 2 && /^\s*\|/.test(lines[0])
+            && /^\s*\|?\s*:?-{2,}/.test(lines[1])) {
+          const cells = line => line.trim().replace(/^\|/, '').replace(/\|$/, '')
+            .split('|').map(cell => cell.trim());
+          const rows = lines.filter(line => !/^\s*\|?\s*:?-{2,}/.test(line)).map(cells);
+          const table = node('table', null, 'md-table');
+          const head = node('thead');
+          const headRow = node('tr');
+          for (const value of rows[0]) {
+            const cell = node('th');
+            cell.append(inlineFragment(value));
+            headRow.append(cell);
+          }
+          head.append(headRow);
+          table.append(head);
+          const body = node('tbody');
+          for (const values of rows.slice(1)) {
+            const row = node('tr');
+            for (const value of values) {
+              const cell = node('td');
+              cell.append(inlineFragment(value));
+              row.append(cell);
+            }
+            body.append(row);
+          }
+          table.append(body);
+          nodes.push(table);
+          continue;
+        }
+        if (lines.every(line => /^\s*[-*]\s+/.test(line))) {
+          const list = node('ul');
+          for (const line of lines) {
+            const item = node('li');
+            item.append(inlineFragment(line.replace(/^\s*[-*]\s+/, '')));
+            list.append(item);
+          }
+          nodes.push(list);
+          continue;
+        }
+        if (lines.every(line => /^\s*\d+[.、)]\s+/.test(line))) {
+          const list = node('ol');
+          for (const line of lines) {
+            const item = node('li');
+            item.append(inlineFragment(line.replace(/^\s*\d+[.、)]\s+/, '')));
+            list.append(item);
+          }
+          nodes.push(list);
+          continue;
+        }
+        const paragraph = node('p');
+        lines.forEach((line, index) => {
+          if (index) paragraph.append(document.createElement('br'));
+          paragraph.append(inlineFragment(line));
+        });
+        nodes.push(paragraph);
+      }
+      return nodes;
+    }
+
+    function sourceItem(source) {
+      const item = node('li');
+      item.id = 'cite-' + source.citation;
+      const title = node('p');
+      title.append(node('strong', '[' + source.citation + '] 《' + source.filename + '》'));
+      if (source.heading) title.append(node('span', ' · ' + source.heading, 'fine'));
+      item.append(title);
+      if (source.location_label) item.append(node('p', source.location_label, 'fine'));
+      if (source.text) item.append(node('p', source.text, 'fine'));
+      const url = localUrl(source.source_url);
+      if (url) item.append(sourceLink(url, '查看来源文档'));
+      return item;
+    }
+
+    function renderReport(data) {
+      byId('report-body').replaceChildren(...markdownNodes(data.report || ''));
+      const sources = Array.isArray(data.sources) ? data.sources : [];
+      byId('report-sources').replaceChildren(...sources.map(sourceItem));
+      byId('report-sources-title').hidden = !sources.length;
+      const mode = reportModeLabels[data.mode] || '生成结果';
+      const model = data.model ? ' · ' + data.model : '';
+      const tokens = data.usage && Number.isFinite(data.usage.total_tokens)
+        ? ' · ' + data.usage.total_tokens + ' tokens' : '';
+      byId('report-meta').textContent = mode + model + tokens + ' · ' + sources.length + ' 条引用';
+      byId('report-note').textContent = data.note || '';
+      byId('report').hidden = false;
+      byId('report').scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
+
+    byId('report-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const query = byId('report-query').value.trim();
+      if (!query) {
+        notice('search-notice', '请输入要整合的主题。', true);
+        byId('report-query').focus();
+        return;
+      }
+      const button = byId('report-button');
+      if (button.disabled) return;
+      const version = ++reportVersion;
+      button.disabled = true;
+      byId('report').hidden = true;
+      notice('search-notice', '正在检索资料并整合…');
+      try {
+        const data = await api('/api/report', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({query, style: byId('report-style').value, top_k: 8})
+        });
+        if (version !== reportVersion) return;
+        renderReport(data);
+        notice('search-notice', '“' + query + '”已生成，引用 ' + (data.sources || []).length + ' 条资料。');
+      } catch (error) {
+        if (version === reportVersion) notice('search-notice', error.message, true);
+      } finally {
+        if (version === reportVersion) button.disabled = false;
       }
     });
 

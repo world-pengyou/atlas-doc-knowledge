@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import html
 import logging
 import shutil
 import ipaddress
@@ -11,7 +12,7 @@ from urllib.parse import urlsplit
 import psycopg
 from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -24,7 +25,7 @@ from kb.errors import DocumentConflict, DocumentNotFound, StorageCheckError, Sto
 
 
 logger = logging.getLogger(__name__)
-DOCUMENT_TYPES = {".pdf", ".md", ".markdown", ".docx"}
+DOCUMENT_TYPES = {".pdf", ".md", ".markdown", ".doc", ".docx"}
 IMAGE_TYPES = {".png", ".jpg", ".jpeg", ".webp"}
 MAX_FILE_BYTES = 50 * 1024 * 1024
 MAX_BATCH_BYTES = 100 * 1024 * 1024
@@ -110,22 +111,63 @@ async def local_origin(request: Request, call_next):
     settings = request.app.state.service.settings
     allowed_hosts = getattr(settings, "web_allowed_hosts", ("127.0.0.1", "localhost", "::1"))
     if request.url.hostname not in allowed_hosts:
-        return JSONResponse({"detail": "请求主机不在允许访问的地址中"}, status_code=403)
+        return _denied(request, "请求主机不在允许访问的地址中")
     try:
         peer = ipaddress.ip_address(request.client.host) if request.client else None
         networks = getattr(settings, "web_allowed_networks", ("127.0.0.0/8", "::1/128"))
         if peer is None or not any(peer in ipaddress.ip_network(value) for value in networks):
             raise ValueError()
     except ValueError:
-        return JSONResponse({"detail": "访问来源不在允许的局域网范围内"}, status_code=403)
+        return _denied(request, "访问来源不在允许的局域网范围内")
     origins = request.headers.getlist("origin")
     if origins:
         try:
             if len(origins) != 1 or _origin(origins[0]) != _origin(str(request.base_url).rstrip("/")):
                 raise ValueError()
         except ValueError:
-            return JSONResponse({"detail": "请求来源与当前服务不一致"}, status_code=403)
+            return _denied(request, "请求来源与当前服务不一致")
     return await call_next(request)
+
+
+def _denied(request, detail):
+    """Answer a browser with a readable page, an API client with JSON, and log why."""
+    peer = request.client.host if request.client else "-"
+    settings = request.app.state.service.settings
+    logger.warning("拒绝访问 %s %s：%s（来源 %s，Host %s，Origin %s）", request.method,
+                   request.url.path, detail, peer, request.url.hostname,
+                   request.headers.get("origin", "-"))
+    if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+        return HTMLResponse(_denied_page(detail, peer, settings), status_code=403)
+    return JSONResponse({"detail": detail}, status_code=403)
+
+
+def _denied_page(detail, peer, settings):
+    hosts = "、".join(getattr(settings, "web_allowed_hosts", ())) or "-"
+    networks = "、".join(getattr(settings, "web_allowed_networks", ())) or "-"
+    return f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>403 · 无法访问</title>
+<style>
+  body {{ margin:0; padding:48px 24px; background:#f5f7fa; color:#1f2933;
+         font:16px/1.7 "Segoe UI","Microsoft YaHei",sans-serif; }}
+  main {{ max-width:760px; margin:0 auto; padding:32px 36px; background:#fff;
+          border-radius:10px; box-shadow:0 2px 12px rgba(15,23,42,.08); }}
+  h1 {{ margin:0 0 12px; font-size:22px; }}
+  p.lead {{ margin:0 0 24px; color:#b42318; font-weight:600; }}
+  dl {{ display:grid; grid-template-columns:7em 1fr; gap:8px 16px; margin:0 0 24px; }}
+  dt {{ color:#52606d; }}
+  dd {{ margin:0; font-family:Consolas,monospace; word-break:break-all; }}
+  footer {{ margin-top:8px; padding-top:16px; border-top:1px solid #e4e7eb;
+            color:#7b8794; font-size:14px; }}
+</style></head><body><main>
+<h1>403 · 当前来源不在允许访问的范围内</h1>
+<p class="lead">{html.escape(detail)}</p>
+<dl>
+  <dt>你的地址</dt><dd>{html.escape(peer)}</dd>
+  <dt>允许的网段</dt><dd>{html.escape(networks)}</dd>
+  <dt>允许的地址</dt><dd>{html.escape(hosts)}</dd>
+</dl>
+<footer>把上面"你的地址"和这一整段发给管理员即可放行；管理员改完 <code>.env</code> 后需重启服务。</footer>
+</main></body></html>"""
 
 
 def _origin(value):
@@ -185,7 +227,7 @@ def safe_upload_name(filename):
             or len(name) > 240 or not path.name or path.parts[0] == "."):
         raise HTTPException(400, "上传文件名或相对路径无效")
     if path.suffix.lower() not in DOCUMENT_TYPES | IMAGE_TYPES:
-        raise HTTPException(400, "支持 PDF、Word（.docx）、Markdown 及配套 PNG/JPEG/WebP 图片")
+        raise HTTPException(400, "支持 PDF、Word（.doc、.docx）、Markdown 及配套 PNG/JPEG/WebP 图片")
     if any(part.endswith((" ", ".")) or part.split(".")[0].upper() in
            {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
             *(f"LPT{i}" for i in range(1, 10))} for part in path.parts):
@@ -204,7 +246,7 @@ async def upload_documents(request: Request, files: list[UploadFile] = File(...)
     if len({str(path).casefold() for path in paths}) != len(paths):
         raise HTTPException(400, "同一批次存在重名文件")
     if not any(path.suffix.lower() in DOCUMENT_TYPES for path in paths):
-        raise HTTPException(400, "请同时选择 PDF、Word（.docx）或 Markdown 文档")
+        raise HTTPException(400, "请同时选择 PDF、Word（.doc/.docx）或 Markdown 文档")
     service = service_for_request(request)
     upload_root = service.settings.data_dir / "uploads"
     batch = upload_root / str(uuid4())
@@ -292,6 +334,12 @@ class SearchRequest(BaseModel):
     limit: int | None = Field(default=None, ge=1, le=20)
 
 
+class ReportRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    style: str = Field(default="report", pattern="^(report|summary|qa)$")
+    top_k: int = Field(default=8, ge=1, le=12)
+
+
 class ConfirmRequest(BaseModel):
     preview_token: UUID
 
@@ -300,6 +348,14 @@ class ConfirmRequest(BaseModel):
 def get_preview(document_id: UUID, request: Request, offset: int = 0, limit: int = 20):
     try:
         return service_for_request(request).preview_document(document_id, offset, limit)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
+@router.get("/api/documents/{document_id}/structure")
+def get_structure(document_id: UUID, request: Request):
+    try:
+        return service_for_request(request).document_structure(document_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
 
@@ -323,6 +379,14 @@ def search(body: SearchRequest, request: Request):
         raise HTTPException(400, str(error)) from None
 
 
+@router.post("/api/report")
+def report(body: ReportRequest, request: Request):
+    try:
+        return service_for_request(request).report(body.query, body.style, body.top_k)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
+
+
 @router.get("/api/documents/{document_id}")
 def get_document(document_id: UUID, request: Request, offset: int = 0, limit: int = 20):
     try:
@@ -341,6 +405,7 @@ def source(document_id: UUID, request: Request):
     if not path.is_relative_to(service.settings.data_dir) or not path.is_file():
         raise HTTPException(404, "原件不存在")
     media_type = {".pdf": "application/pdf",
+                  ".doc": "application/msword",
                   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}.get(
                       path.suffix.lower(), "text/plain; charset=utf-8")
     return FileResponse(path, media_type=media_type,

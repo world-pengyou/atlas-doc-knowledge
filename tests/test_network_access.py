@@ -1,4 +1,5 @@
 """Exercise LAN configuration and HTTP boundaries without sockets or services."""
+import json
 import os
 import sys
 import unittest
@@ -182,15 +183,15 @@ class NetworkMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             web_allowed_networks=("127.0.0.0/8", "::1/128", "192.168.50.0/24", "fd12:3456::/64"),
         )
 
-    async def check(self, *, host="192.168.50.7:8100", peer="192.168.50.22", origin=MISSING,
-                    scheme="http", extra=(), settings=None):
+    async def respond(self, *, host="192.168.50.7:8100", peer="192.168.50.22", origin=MISSING,
+                      scheme="http", extra=(), settings=None, method="POST", path="/mcp"):
         headers = [(b"host", host.encode("ascii"))]
         if origin is not MISSING:
             headers.append((b"origin", origin.encode("ascii")))
         headers.extend((name.lower().encode("ascii"), value.encode("ascii")) for name, value in extra)
         scope = {
             "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
-            "method": "POST", "scheme": scheme, "path": "/mcp", "raw_path": b"/mcp",
+            "method": method, "scheme": scheme, "path": path, "raw_path": path.encode("ascii"),
             "root_path": "", "query_string": b"", "headers": headers,
             "client": (peer, 45678) if peer is not None else None,
             "server": ("192.168.50.7", 8100),
@@ -203,7 +204,10 @@ class NetworkMiddlewareTests(unittest.IsolatedAsyncioTestCase):
             next_call.assert_awaited_once_with(request)
         else:
             next_call.assert_not_awaited()
-        return response.status_code
+        return response
+
+    async def check(self, **kwargs):
+        return (await self.respond(**kwargs)).status_code
 
     async def test_allowed_lan_peer_and_same_origin_or_absent_origin_are_accepted(self):
         self.assertEqual(await self.check(), 204)
@@ -260,6 +264,33 @@ class NetworkMiddlewareTests(unittest.IsolatedAsyncioTestCase):
                                                 ("X-Forwarded-Host", "attacker.test"),
                                                 ("X-Forwarded-Proto", "https")),
                                           origin="http://192.168.50.7:8100"), 204)
+
+    async def test_browser_rejection_explains_the_reason_and_client_address(self):
+        response = await self.respond(peer="192.168.51.22", method="GET", path="/",
+                                      extra=(("Accept", "text/html,application/xhtml+xml"),))
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("text/html", response.headers["content-type"])
+        body = response.body.decode("utf-8")
+        self.assertIn("访问来源不在允许的局域网范围内", body)
+        self.assertIn("192.168.51.22", body)
+        self.assertIn("192.168.50.0/24", body)
+        self.assertIn("knowledge.lan", body)
+
+    async def test_programmatic_clients_still_receive_json(self):
+        for accept in ("*/*", "application/json"):
+            with self.subTest(accept=accept):
+                response = await self.respond(peer="192.168.51.22", extra=(("Accept", accept),))
+                self.assertEqual(response.status_code, 403)
+                self.assertIn("application/json", response.headers["content-type"])
+                self.assertEqual(json.loads(response.body),
+                                 {"detail": "访问来源不在允许的局域网范围内"})
+
+    async def test_host_rejection_page_lists_configured_hosts(self):
+        response = await self.respond(host="attacker.test:8100", method="GET", path="/",
+                                      extra=(("Accept", "text/html"),))
+        body = response.body.decode("utf-8")
+        self.assertIn("请求主机不在允许访问的地址中", body)
+        self.assertIn("192.168.50.7", body)
 
     async def test_legacy_fake_settings_fall_back_to_loopback_only(self):
         legacy = SimpleNamespace(public_base_url="http://127.0.0.1:8100")

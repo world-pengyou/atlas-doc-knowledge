@@ -113,8 +113,10 @@ class PreviewWorkflowTests(unittest.TestCase):
         self.service.models.describe_image.assert_not_called()
         self.assertEqual(snapshot.read_bytes(), original_snapshot)
         self.db.publish.assert_called_once()
-        doc_id, claim_token, chunks, image_count = self.db.publish.call_args.args
+        doc_id, claim_token, chunks, image_count, units = self.db.publish.call_args.args
         self.assertEqual((doc_id, claim_token, image_count), (row["id"], confirmed["claim_token"], 2))
+        self.assertEqual([unit["title"] for unit in units], [""])
+        self.assertEqual([chunk["unit_key"] for chunk in chunks], ["root"] * len(chunks))
         self.assertEqual([c["text"] for c in chunks], [c["text"] for c in preview])
         for chunk, displayed in zip(chunks, preview):
             self.assertEqual(chunk["kind"], displayed["kind"])

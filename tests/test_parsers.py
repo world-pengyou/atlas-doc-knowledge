@@ -62,7 +62,7 @@ class ParserTests(unittest.TestCase):
         blocks = parse_document(pdf, self.assets)
         figure, = [b for b in blocks if b.kind == "image"]
         self.assertEqual(figure.location["bbox"], [0, 0, 240, 180])
-        self.assertEqual(Path(figure.asset_path), self.assets / "page-1.png")
+        self.assertEqual(Path(figure.asset_path).resolve(), (self.assets / "page-1.png").resolve())
         self.assertIn("Start", figure.text)
         self.assertIn("Finish", figure.text)
 
@@ -76,6 +76,42 @@ class ParserTests(unittest.TestCase):
         block, = parse_document(pdf, self.assets)
         self.assertEqual(block.kind, "image")
         self.assertEqual(Path(block.asset_path).name, "page-1.png")
+
+    def test_pdf_heading_by_font_size_and_running_header(self):
+        pdf = self.root / "book.pdf"
+        chapters = ["第一章 项目概况", "第二章 技术方案", "第三章 实施方案"]
+        with pymupdf.open() as doc:
+            for number, title in enumerate(chapters, 1):
+                page = doc.new_page(width=300, height=400)
+                page.insert_text((20, 20), "内部资料 第 %d 页" % number, fontsize=8)
+                page.insert_text((20, 70), title, fontsize=18, fontname="china-s")
+                page.insert_text((20, 100), "本段说明建设内容与实施要求。", fontsize=10,
+                                 fontname="china-s")
+            doc.save(pdf)
+        blocks = parse_document(pdf, self.assets)
+        texts = [block.text for block in blocks]
+        self.assertFalse(any("内部资料" in text for text in texts), "页眉应被剥离")
+        headings = [block for block in blocks if block.role == "heading"]
+        self.assertEqual([block.text for block in headings], chapters)
+        self.assertEqual([block.heading_level for block in headings], [1, 1, 1])
+        body = [block for block in blocks if block.role == "body"]
+        self.assertEqual(body[1].heading_path, ("第二章 技术方案",))
+
+    def test_pdf_contents_lines_are_skipped(self):
+        pdf = self.root / "toc.pdf"
+        with pymupdf.open() as doc:
+            page = doc.new_page(width=300, height=400)
+            for index, line in enumerate(["第一章 项目概况 ........ 3",
+                                          "第二章 技术方案 ........ 8",
+                                          "第三章 实施方案 ........ 15"]):
+                page.insert_text((20, 50 + index * 20), line, fontsize=11, fontname="china-s")
+            body = doc.new_page(width=300, height=400)
+            body.insert_text((20, 50), "正文第一段内容。", fontsize=11, fontname="china-s")
+            doc.save(pdf)
+        blocks = parse_document(pdf, self.assets)
+        self.assertEqual([block.text for block in blocks if block.kind == "text"],
+                         ["正文第一段内容。"])
+        self.assertEqual([block.kind for block in blocks], ["text"])
 
     def test_markdown_headings_relative_image_and_source_lines(self):
         self.image()

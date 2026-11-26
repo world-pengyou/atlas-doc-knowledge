@@ -22,6 +22,8 @@
 /docs/*
 !/docs/dependencies.json
 !/docs/existing-dependency-advisories.json
+!/docs/database.md
+!/docs/问题清单-按重要性-2026-11-26.md
 
 # Explicit local-only protection, including nested files and backups.
 .env

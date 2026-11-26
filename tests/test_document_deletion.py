@@ -51,6 +51,8 @@ class DeletionDatabaseTests(unittest.TestCase):
                 cursor.fetchone.return_value = self.job if job else None
             elif normalized.startswith("delete from kb002.chunks"):
                 cursor.rowcount = 3
+            elif normalized.startswith("delete from kb002.units"):
+                cursor.rowcount = 3
             elif normalized.startswith("insert into kb002.deletions"):
                 cursor.fetchone.return_value = self.job
             elif normalized.startswith("delete from kb002.documents"):

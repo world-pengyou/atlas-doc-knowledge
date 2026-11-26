@@ -22,6 +22,10 @@ def settings(**changes):
         "vision_base_url": "",
         "vision_api_key": "",
         "vision_model": "",
+        "chat_base_url": "",
+        "chat_api_key": "",
+        "chat_model": "",
+        "chat_max_tokens": 2000,
         "model_timeout": 30,
     }
     values.update(changes)
@@ -189,6 +193,52 @@ class ModelClientTests(unittest.TestCase):
         with patch.object(client, "_post") as post:
             self.assertEqual(client.describe_images([]), [])
             post.assert_not_called()
+
+
+    def test_chat_completion_returns_text_and_usage(self):
+        client = ModelClient(settings(chat_base_url="http://127.0.0.1:9000/v1",
+                                      chat_api_key="secret", chat_model="chat-test",
+                                      chat_max_tokens=512))
+        response = {"choices": [{"message": {"content": "  ## 结论\n资料[1]  "}}],
+                    "usage": {"prompt_tokens": 90, "completion_tokens": 30, "total_tokens": 120}}
+        with patch.object(client, "_post", return_value=response) as post:
+            text, usage = client.generate("系统提示", "用户问题")
+        self.assertEqual(text, "## 结论\n资料[1]")
+        self.assertEqual(usage, {"prompt_tokens": 90, "completion_tokens": 30, "total_tokens": 120})
+        base_url, api_key, endpoint, payload = post.call_args.args
+        self.assertEqual((base_url, endpoint), ("http://127.0.0.1:9000/v1", "chat/completions"))
+        self.assertEqual(api_key, "secret")
+        self.assertEqual(payload["model"], "chat-test")
+        self.assertEqual(payload["max_tokens"], 512)
+        self.assertEqual(payload["messages"][0]["content"], "系统提示")
+        self.assertEqual(payload["messages"][1]["content"], "用户问题")
+        self.assertTrue(client.chat_configured)
+
+    def test_chat_completion_accepts_content_parts(self):
+        client = ModelClient(settings(chat_base_url="http://127.0.0.1:9000/v1", chat_model="chat-test"))
+        response = {"choices": [{"message": {"content": [
+            {"type": "text", "text": "第一段"}, {"type": "text", "text": "第二段"}]}}]}
+        with patch.object(client, "_post", return_value=response):
+            text, usage = client.generate("s", "u")
+        self.assertEqual(text, "第一段第二段")
+        self.assertEqual(usage, {})
+
+    def test_chat_completion_rejects_malformed_empty_or_oversized_content(self):
+        client = ModelClient(settings(chat_base_url="http://127.0.0.1:9000/v1", chat_model="chat-test"))
+        values = ({}, {"choices": []}, {"choices": [{"message": {"content": "  "}}]},
+                  {"choices": [{"message": {"content": "x" * (client.MAX_REPORT_CHARS + 1)}}]},
+                  {"choices": [{"message": {"content": 2}}]})
+        for response in values:
+            with self.subTest(response=str(response)[:40]):
+                with patch.object(client, "_post", return_value=response):
+                    with self.assertRaises(ModelError):
+                        client.generate("s", "u")
+
+    def test_generate_requires_a_configured_endpoint_and_model(self):
+        with self.assertRaisesRegex(ModelError, "生成模型地址"):
+            ModelClient(settings()).generate("s", "u")
+        with self.assertRaisesRegex(ModelError, "生成模型名称"):
+            ModelClient(settings(chat_base_url="http://127.0.0.1:9000/v1")).generate("s", "u")
 
 
 if __name__ == "__main__":

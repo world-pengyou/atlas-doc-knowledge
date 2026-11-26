@@ -2,7 +2,12 @@
 
 import math
 import hashlib
+import os
 import re
+import shutil
+import subprocess
+import tempfile
+import time
 from io import BytesIO
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import unquote, urlsplit
@@ -19,6 +24,8 @@ from markdown_it import MarkdownIt
 from markdown_it.rules_inline.image import image as parse_inline_image
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .headings import (HeadingDetector, body_font_size, running_line_indexes,
+                       title_sizes, toc_line_indexes)
 from .types import ParsedBlock
 
 
@@ -44,7 +51,9 @@ def parse_document(path: Path, asset_dir: Path) -> list[ParsedBlock]:
         return _parse_markdown(path, asset_dir)
     if path.suffix.lower() == ".docx":
         return _parse_docx(path, asset_dir)
-    raise ValueError("仅支持 PDF、Markdown（.md、.markdown）和 Word（.docx）文件；旧版 .doc 请另存为 .docx")
+    if path.suffix.lower() == ".doc":
+        return _parse_doc(path, asset_dir)
+    raise ValueError("仅支持 PDF、Markdown（.md、.markdown）和 Word（.doc、.docx）文件")
 
 
 def _validate_docx_package(path: Path) -> None:
@@ -80,7 +89,216 @@ def _validate_docx_package(path: Path) -> None:
         raise ValueError("Word 文件损坏或并非有效的 .docx 文件") from None
 
 
-def _parse_docx(path: Path, asset_dir: Path) -> list[ParsedBlock]:
+_STYLE_HEADING = re.compile(r"^(?:heading|标题|h)\s*([1-9])$", re.IGNORECASE)
+_TOC_STYLE = re.compile(r"^(?:toc|目录)\s*([1-9])?$", re.IGNORECASE)
+_DEFAULT_WORD_SIZE = 10.5
+
+
+def _effective_bold(value, style) -> bool:
+    if value is not None:
+        return bool(value)
+    while style is not None:
+        font = getattr(style, "font", None)
+        if font is not None and font.bold is not None:
+            return bool(font.bold)
+        style = getattr(style, "base_style", None)
+    return False
+
+
+def _paragraph_font_size(paragraph) -> float:
+    for run in paragraph.runs:
+        if run.text.strip():
+            size = run.font.size
+            if size is not None:
+                return float(size.pt)
+    style = paragraph.style
+    while style is not None:
+        size = getattr(getattr(style, "font", None), "size", None)
+        if size is not None:
+            return float(size.pt)
+        style = getattr(style, "base_style", None)
+    return _DEFAULT_WORD_SIZE
+
+
+def _paragraph_bold(paragraph) -> bool:
+    runs = [run for run in paragraph.runs if run.text.strip()]
+    if runs:
+        return all(_effective_bold(run.font.bold, paragraph.style) for run in runs)
+    return _effective_bold(None, paragraph.style)
+
+
+def _heading_style_level(paragraph) -> int:
+    """Built-in Word heading styles, including the Chinese localised names."""
+    style = paragraph.style
+    if style is None:
+        return 0
+    for candidate in (style.style_id or "", (style.name or "").strip()):
+        matched = re.fullmatch(r"Heading([1-9])", candidate)
+        if matched:
+            return int(matched.group(1))
+        matched = _STYLE_HEADING.match(candidate.replace(" ", ""))
+        if matched:
+            return int(matched.group(1))
+    if (style.name or "").strip().lower() in {"title", "标题"}:
+        return 1
+    return 0
+
+
+def _is_toc_paragraph(paragraph) -> bool:
+    """Word marks contents entries by style, or by links to _Toc bookmarks."""
+    style = paragraph.style
+    if style is not None:
+        for candidate in (style.style_id or "", (style.name or "").strip()):
+            if _TOC_STYLE.match(candidate):
+                return True
+    anchors = paragraph._p.xpath(".//w:hyperlink/@w:anchor")
+    if not any(str(anchor).startswith("_Toc") for anchor in anchors):
+        return False
+    text = paragraph.text.strip()
+    # Cross references in the body also point at _Toc bookmarks; a contents
+    # entry is short and ends with its page number.
+    return bool(text) and len(text) <= 100 and text[-1].isdigit()
+
+
+def _docx_text_metrics(document):
+    """Character-weighted body font size plus all observed sizes."""
+    weighted = []
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if text:
+            weighted.append((_paragraph_font_size(paragraph), len(text)))
+    body_size = body_font_size(weighted) or _DEFAULT_WORD_SIZE
+    return body_size, [size for size, _ in weighted]
+
+
+def _parse_doc(path: Path, asset_dir: Path) -> list[ParsedBlock]:
+    """Convert a legacy binary .doc to .docx, then reuse the Word pipeline."""
+    with tempfile.TemporaryDirectory(prefix="kb-doc-",
+                                     ignore_cleanup_errors=True) as directory:
+        converted = _convert_doc_to_docx(path, Path(directory))
+        blocks = _parse_docx(converted, asset_dir, fmt="doc")
+        if not blocks:
+            raise ValueError("旧版 .doc 转换后没有可解析内容，可能已损坏或受密码保护")
+        return blocks
+
+
+def _convert_doc_to_docx(source: Path, target_dir: Path) -> Path:
+    """Convert .doc with LibreOffice when present, otherwise with Word COM."""
+    target = target_dir / (source.stem + ".docx")
+    failures = []
+    program = _find_soffice()
+    if program:
+        try:
+            _convert_with_soffice(program, source, target_dir)
+            if target.is_file() and target.stat().st_size > 0:
+                return target
+            failures.append("LibreOffice 未生成 .docx")
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            failures.append(f"LibreOffice 转换失败：{error}")
+    if os.name == "nt":
+        try:
+            if _convert_with_word(source, target):
+                return target
+            failures.append("未检测到可用的 Microsoft Word")
+        except Exception as error:  # COM raises dynamic pywin32 errors
+            failures.append(f"Microsoft Word 转换失败：{error}")
+    detail = "；".join(failures) or "未找到 LibreOffice 或 Microsoft Word"
+    raise ValueError(
+        "无法解析旧版 .doc：" + detail
+        + "。请安装 Microsoft Word / LibreOffice，或把文件另存为 .docx 后上传。"
+    )
+
+
+def _find_soffice() -> Path | None:
+    candidates = []
+    configured = os.environ.get("SOFFICE_PATH", "").strip()
+    if configured:
+        candidates.append(Path(configured))
+    for name in ("soffice.exe", "soffice"):
+        located = shutil.which(name)
+        if located:
+            candidates.append(Path(located))
+    candidates.extend([
+        Path(r"C:\Program Files\LibreOffice\program\soffice.exe"),
+        Path(r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"),
+    ])
+    return next((item for item in candidates if item.is_file()), None)
+
+
+def _convert_with_soffice(program: Path, source: Path, target_dir: Path) -> None:
+    # A private profile keeps conversions out of the desktop session and lets
+    # several conversions run without waiting on the shared profile lock.
+    profile = target_dir / "soffice-profile"
+    profile.mkdir(parents=True, exist_ok=True)
+    command = [str(program), "--headless", "--nologo", "--norestore",
+               "--convert-to", "docx", "--outdir", str(target_dir),
+               f"-env:UserInstallation={profile.as_uri()}", str(source)]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    result = subprocess.run(command, capture_output=True, timeout=180,
+                            creationflags=flags)
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).decode("utf-8", "replace").strip()
+        raise ValueError(message[:300] or f"退出码 {result.returncode}")
+    # LibreOffice drops a read-only "~lock" beside the converted file and may
+    # still hold it briefly; clear it so the temporary directory can go away.
+    for _ in range(10):
+        locks = list(target_dir.glob(".~lock.*"))
+        if not locks:
+            break
+        for lock in locks:
+            try:
+                lock.unlink()
+            except OSError:
+                pass
+        if list(target_dir.glob(".~lock.*")):
+            time.sleep(0.2)
+
+
+def _convert_with_word(source: Path, target: Path) -> bool:
+    try:
+        import pythoncom
+        import win32com
+    except ImportError:
+        return False
+    # pywin32 caches generated COM wrappers under %TEMP%; point it at a
+    # writable workspace cache first so restricted service tokens still work.
+    cache = Path(tempfile.gettempdir()) / "kb-word-com"
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        cache = target.parent / ".word-com-cache"
+        cache.mkdir(parents=True, exist_ok=True)
+    win32com.__gen_path__ = str(cache)
+    from win32com import client
+    pythoncom.CoInitialize()
+    word = None
+    try:
+        word = client.DispatchEx("Word.Application")
+        word.Visible = False
+        word.DisplayAlerts = 0
+        try:
+            word.AutomationSecurity = 3  # msoAutomationSecurityForceDisable
+        except Exception:
+            pass
+        document = word.Documents.Open(str(source), False, True, False)
+        try:
+            saver = getattr(document, "SaveAs2", None) or document.SaveAs
+            saver(str(target), 16)  # wdFormatDocumentDefault -> .docx
+        finally:
+            document.Close(0)
+        return target.is_file() and target.stat().st_size > 0
+    except Exception:
+        raise
+    finally:
+        if word is not None:
+            try:
+                word.Quit()
+            except Exception:
+                pass
+        pythoncom.CoUninitialize()
+
+
+def _parse_docx(path: Path, asset_dir: Path, fmt: str = "docx") -> list[ParsedBlock]:
     # Reuses EduRAG edu_docloader.py's ordered paragraph/table traversal and
     # relationship-based embedded-image lookup. Image interpretation is left to
     # the existing preview/vision pipeline instead of starting a second OCR stack.
@@ -93,6 +311,8 @@ def _parse_docx(path: Path, asset_dir: Path) -> list[ParsedBlock]:
         # python-docx omits revised text while image traversal can still see it.
         # Require one explicit source version rather than mixing revision states.
         raise ValueError("Word 正文含未处理修订，请先接受或拒绝全部修订，另存为 .docx 后再上传")
+    body_size, sizes = _docx_text_metrics(document)
+    detector = HeadingDetector(body_size, title_sizes(sizes, body_size))
     blocks = []
     headings = {}
     paragraph_number = 0
@@ -105,19 +325,28 @@ def _parse_docx(path: Path, asset_dir: Path) -> list[ParsedBlock]:
         nonlocal paragraph_number, image_number, saved_bytes
         paragraph_number += 1
         text = paragraph.text.strip()
-        style_id = paragraph.style.style_id if paragraph.style is not None else ""
-        heading = re.fullmatch(r"Heading([1-9])", style_id or "")
-        if heading and "table" not in location:
-            level = int(heading.group(1))
+        in_table = "table" in location
+        if not in_table and _is_toc_paragraph(paragraph):
+            return
+        level = 0
+        if not in_table:
+            # Style first, then numbering, then font size and weight: most
+            # 标书 headings carry manual bold/large formatting only.
+            level = detector.detect(text, style_level=_heading_style_level(paragraph),
+                                    size=_paragraph_font_size(paragraph),
+                                    bold=_paragraph_bold(paragraph))
+        if level:
             for key in list(headings):
                 if key >= level:
                     del headings[key]
             if text:
                 headings[level] = text
-        loc = {"format": "docx", **location, "paragraph": paragraph_number,
+        loc = {"format": fmt, **location, "paragraph": paragraph_number,
                "heading": " / ".join(headings.values())}
         if text:
-            blocks.append(ParsedBlock(text, "text", loc))
+            blocks.append(ParsedBlock(text, "text", loc, heading_path=tuple(headings.values()),
+                                      heading_level=level,
+                                      role="heading" if level else "body"))
         # Both modern DrawingML and legacy VML embedded pictures are supported.
         image_tags = {qn("a:blip"), "{urn:schemas-microsoft-com:vml}imagedata"}
         pictures = [element for element in paragraph._p.iter() if element.tag in image_tags]
@@ -155,7 +384,8 @@ def _parse_docx(path: Path, asset_dir: Path) -> list[ParsedBlock]:
             context = "\n".join(dict.fromkeys(value for value in
                                              (loc["heading"][:300], text[:1000]) if value))
             blocks.append(ParsedBlock(context, "image", {**loc, "image": image_number,
-                                                         "preview": asset.name}, str(asset)))
+                                                         "preview": asset.name}, str(asset),
+                                      heading_path=tuple(headings.values())))
 
     def visit(parent, location, depth=0):
         nonlocal table_number
@@ -206,6 +436,83 @@ def _save_word_image(blob: bytes, asset: Path) -> None:
         raise ValueError("Word 图片损坏或格式暂不支持，请将图片转为 PNG/JPEG，或将文档转为 PDF") from None
 
 
+def _pdf_bold(font_name) -> bool:
+    name = (font_name or "").lower()
+    return any(marker in name for marker in
+               ("bold", "black", "heavy", "semibold", "demi", "medium"))
+
+
+def _pdf_page_text(page, frame):
+    """Text lines grouped by source block, keeping font size and weight."""
+    data = page.get_text("dict", sort=True)
+    groups = []
+    flat = []
+    for block in data.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        lines = []
+        for line in block.get("lines", []):
+            spans = line.get("spans") or []
+            text = "".join(span.get("text", "") for span in spans).strip()
+            if not text:
+                continue
+            bbox = (pymupdf.Rect(line.get("bbox")) * page.rotation_matrix) & frame
+            if bbox.is_empty:
+                continue
+            characters = sum(len(span.get("text", "")) for span in spans) or 1
+            bold_characters = sum(len(span.get("text", "")) for span in spans
+                                  if span.get("flags", 0) & 16
+                                  or _pdf_bold(span.get("font", "")))
+            sizes = [float(span.get("size") or 0) for span in spans]
+            record = {"text": text, "bbox": list(bbox),
+                      "size": max(sizes) if sizes else 0.0,
+                      "bold": bold_characters * 2 >= characters,
+                      "index": len(flat)}
+            flat.append(record)
+            lines.append(record)
+        if lines:
+            groups.append(lines)
+    return {"height": frame.height, "lines": flat, "groups": groups}
+
+
+def _flush_pdf_block(result, buffer):
+    if not buffer:
+        return
+    text = "\n".join(line["text"] for line in buffer)
+    result.append({
+        "text": text,
+        "bbox": [min(line["bbox"][0] for line in buffer),
+                 min(line["bbox"][1] for line in buffer),
+                 max(line["bbox"][2] for line in buffer),
+                 max(line["bbox"][3] for line in buffer)],
+        "size": max(line["size"] for line in buffer),
+        "bold": all(line["bold"] for line in buffer),
+    })
+    buffer.clear()
+
+
+def _pdf_page_blocks(groups, dropped, detector):
+    """Split a source block wherever a title line starts a new section.
+
+    PDF blocks often merge a heading with the paragraph below it; giving the
+    title its own block keeps the heading out of the body chunk.
+    """
+    result = []
+    for lines in groups:
+        buffer = []
+        for line in lines:
+            if line["index"] in dropped:
+                continue
+            level = detector.detect(line["text"], size=line["size"], bold=line["bold"])
+            if buffer and level:
+                _flush_pdf_block(result, buffer)
+            buffer.append(line)
+            if level:
+                _flush_pdf_block(result, buffer)
+        _flush_pdf_block(result, buffer)
+    return result
+
+
 def _parse_pdf(path: Path, asset_dir: Path) -> list[ParsedBlock]:
     # Adapted from EduRAG's rag_qa/edu_document_loaders/edu_pdfloader.py:
     # enumerate pages, extract native text and inspect displayed image occurrences.
@@ -217,7 +524,18 @@ def _parse_pdf(path: Path, asset_dir: Path) -> list[ParsedBlock]:
             raise ValueError("请提供可直接读取的未加密 PDF")
         if not 1 <= doc.page_count <= MAX_PAGES:
             raise ValueError(f"PDF 页数须在 1 到 {MAX_PAGES} 页之间")
+        # One text pass up front: body font size, repeated page furniture and
+        # contents lines all depend on the whole document, not a single page.
+        pages = [_pdf_page_text(page, page.rect) for page in doc]
+        running = running_line_indexes(pages)
+        contents = toc_line_indexes(pages, max(5, doc.page_count // 5))
+        sizes = [line["size"] for page in pages for line in page["lines"]]
+        body_size = body_font_size([(line["size"], len(line["text"]))
+                                    for page in pages for line in page["lines"]])
+        detector = HeadingDetector(body_size, title_sizes(sizes, body_size))
+        headings = {}
         for page_number, page in enumerate(doc, start=1):
+            dropped = running[page_number - 1] | contents[page_number - 1]
             frame = page.rect
             if frame.is_empty or frame.is_infinite:
                 raise ValueError(f"PDF 第 {page_number} 页的尺寸无效")
@@ -234,19 +552,27 @@ def _parse_pdf(path: Path, asset_dir: Path) -> list[ParsedBlock]:
             loc = {"page": page_number, "page_width": frame.width, "page_height": frame.height,
                    "preview": preview.name}
             page_text = []
-            for item in page.get_text("blocks", sort=True):
-                if item[6] != 0 or not item[4].strip():
-                    continue
-                bbox = (pymupdf.Rect(item[:4]) * page.rotation_matrix) & frame
-                if not bbox.is_empty:
-                    blocks.append(ParsedBlock(item[4].strip(), "text", {**loc, "bbox": list(bbox)}))
-                    page_text.append(item[4].strip())
+            for block in _pdf_page_blocks(pages[page_number - 1]["groups"], dropped, detector):
+                level = detector.detect(block["text"], size=block["size"], bold=block["bold"])
+                if level:
+                    for key in list(headings):
+                        if key >= level:
+                            del headings[key]
+                    headings[level] = block["text"].strip()
+                blocks.append(ParsedBlock(block["text"], "text", {**loc, "bbox": block["bbox"]},
+                                          heading_path=tuple(headings.values()),
+                                          heading_level=level,
+                                          role="heading" if level else "body"))
+                page_text.append(block["text"])
             context = "\n".join(page_text)[:1800]
 
             # All coordinates refer to the displayed page, including PDF rotation.
             # A dense diagram may have much more detail than its page preview.
             seen = set()
-            page_visual = bool(page.get_drawings()) or (not page_text and not images)
+            # A page whose text was all page furniture or contents still is not a
+            # scanned page: sending it to the vision model would waste money.
+            page_visual = bool(page.get_drawings()) or (
+                not pages[page_number - 1]["lines"] and not images)
             with Image.open(preview) as rendered:
                 for img in images:
                     bbox = (pymupdf.Rect(img["bbox"]) * page.rotation_matrix) & frame
@@ -392,6 +718,7 @@ def _parse_markdown(path: Path, asset_dir: Path) -> list[ParsedBlock]:
         leading = rendered[: len(rendered) - len(rendered.lstrip())]
         location["line_start"] += leading.count("\n")
         location["line_end"] = location["line_start"] + text.count("\n")
+        level = 0
         if index and tokens[index - 1].type == "heading_open":
             level = int(tokens[index - 1].tag[1:])
             headings = {k: v for k, v in headings.items() if k < level}
@@ -399,11 +726,14 @@ def _parse_markdown(path: Path, asset_dir: Path) -> list[ParsedBlock]:
                 headings[level] = text
             location["heading"] = " / ".join(headings.values())
         if text:
-            blocks.append(ParsedBlock(text, "text", location))
+            blocks.append(ParsedBlock(text, "text", location, heading_path=tuple(headings.values()),
+                                      heading_level=level,
+                                      role="heading" if level else "body"))
         for alt, line, end_line, asset in figures:
             context = "\n".join(dict.fromkeys(part for part in
                                 (location["heading"][:300], alt[:400], text[:1000]) if part))
             image_location = {**location, "line_start": line, "line_end": end_line,
                               "preview": asset.name}
-            blocks.append(ParsedBlock(context, "image", image_location, str(asset)))
+            blocks.append(ParsedBlock(context, "image", image_location, str(asset),
+                                      heading_path=tuple(headings.values())))
     return blocks

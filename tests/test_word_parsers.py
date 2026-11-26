@@ -5,7 +5,9 @@ from unittest.mock import patch
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from docx import Document
+from docx.enum.style import WD_STYLE_TYPE
 from docx.oxml import OxmlElement
+from docx.shared import Pt
 from docx.oxml.ns import qn
 from docx.opc.constants import RELATIONSHIP_TYPE
 from PIL import Image
@@ -58,6 +60,42 @@ class WordParserTests(unittest.TestCase):
                                             "cell": 1, "paragraph": 5, "heading": "售前方案"})
         self.assertEqual(blocks[-1].location["heading"], "售前方案 / 交付")
         self.assertTrue(all("page" not in block.location for block in blocks))
+
+    def test_manual_bold_large_numbering_opens_a_section(self):
+        document = Document()
+        document.add_paragraph("项目概述")
+        manual = document.add_paragraph()
+        run = manual.add_run("2.2 视频监控系统")
+        run.bold = True
+        run.font.size = Pt(15)
+        document.add_paragraph("摄像机安装高度不低于3米。")
+        blocks = parse_document(self.save(document), self.assets)
+        heading = blocks[1]
+        self.assertEqual(heading.role, "heading")
+        self.assertEqual(heading.heading_level, 2)
+        self.assertEqual(heading.heading_path, ("2.2 视频监控系统",))
+        self.assertEqual(blocks[2].role, "body")
+        self.assertEqual(blocks[2].location["heading"], "2.2 视频监控系统")
+        self.assertEqual(blocks[2].heading_level, 0)
+
+    def test_plain_list_item_is_not_mistaken_for_a_heading(self):
+        document = Document()
+        document.add_paragraph("1、材料进场后应完成验收记录并归档保存。")
+        blocks = parse_document(self.save(document), self.assets)
+        self.assertEqual(blocks[0].role, "body")
+        self.assertEqual(blocks[0].heading_level, 0)
+
+    def test_contents_entries_are_skipped(self):
+        document = Document()
+        try:
+            style = document.styles.add_style("TOC 1", WD_STYLE_TYPE.PARAGRAPH)
+        except ValueError:
+            style = document.styles["TOC 1"]
+        document.add_paragraph("第一章 项目概况 1", style=style)
+        document.add_paragraph("第二章 技术方案 5", style=style)
+        document.add_paragraph("正文段落")
+        blocks = parse_document(self.save(document), self.assets)
+        self.assertEqual([block.text for block in blocks], ["正文段落"])
 
     def test_nested_and_merged_cells_are_not_duplicated(self):
         document = Document()
@@ -138,8 +176,10 @@ class WordParserTests(unittest.TestCase):
     def test_legacy_doc_and_invalid_package_fail_clearly(self):
         legacy = self.root / "legacy.doc"
         legacy.write_bytes(b"not a docx")
-        with self.assertRaisesRegex(ValueError, "旧版 .doc"):
-            parse_document(legacy, self.assets)
+        with patch("kb.parsers._find_soffice", return_value=None), \
+                patch("kb.parsers._convert_with_word", return_value=False):
+            with self.assertRaisesRegex(ValueError, "旧版 .doc"):
+                parse_document(legacy, self.assets)
         invalid = self.root / "invalid.docx"
         invalid.write_bytes(b"not a zip")
         with self.assertRaisesRegex(ValueError, "并非有效的 .docx"):
@@ -213,6 +253,21 @@ class WordParserTests(unittest.TestCase):
         cell.paragraphs[0]._p.append(insertion)
         with self.assertRaisesRegex(ValueError, "Word 正文含未处理修订"):
             parse_document(self.save(document), self.assets)
+
+
+    def test_legacy_doc_converts_and_uses_doc_locations(self):
+        document = Document()
+        document.add_heading("旧版方案", 1)
+        document.add_paragraph("正文内容")
+        converted = self.save(document)
+        legacy = self.root / "旧版方案.doc"
+        legacy.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+        with patch("kb.parsers._convert_doc_to_docx", return_value=converted) as convert:
+            blocks = parse_document(legacy, self.assets)
+        convert.assert_called_once()
+        self.assertEqual([block.text for block in blocks], ["旧版方案", "正文内容"])
+        self.assertEqual({block.location["format"] for block in blocks}, {"doc"})
+
 
 
 if __name__ == "__main__":

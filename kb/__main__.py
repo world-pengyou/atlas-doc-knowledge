@@ -3,7 +3,7 @@ import sys
 
 
 def main():
-    parser = argparse.ArgumentParser(description="本地图文知识库")
+    parser = argparse.ArgumentParser(description="本地文档知识库（售后/售前）")
     parser.add_argument("command", choices=["init-db", "serve", "check"])
     parser.add_argument("--port", type=int)
     parser.add_argument("--host", help="监听 IP，默认从 WEB_HOST 读取")

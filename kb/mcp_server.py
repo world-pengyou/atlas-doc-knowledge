@@ -54,7 +54,7 @@ def create_server(service=None, *, streamable_http_path="/mcp", preload_local_ru
         # blocking reader thread. Model weights are still loaded on first use.
         import_module("sentence_transformers")
     server = FastMCP(
-        "售前图文知识库" if getattr(settings, "public_base_url", "").endswith("/presales") else "图文知识库",
+        "售前图文知识库" if getattr(settings, "public_base_url", "").endswith("/presales") else "售后图文知识库",
         host="127.0.0.1", port=port,
         streamable_http_path=streamable_http_path, stateless_http=True, json_response=True,
         transport_security=_transport_security(settings, port),
@@ -70,6 +70,18 @@ def create_server(service=None, *, streamable_http_path="/mcp", preload_local_ru
         except Exception as error:
             logging.error("MCP search failed (%s)", type(error).__name__)
             raise ValueError("知识库查询失败，请检查数据库和模型服务") from None
+
+    @server.tool()
+    async def generate_report(query: str, style: str = "report",
+                              top_k: int = 8) -> dict[str, Any]:
+        """先混合检索再整合成报告或摘要；style 可选 report、summary、qa，返回正文、引用来源与生成方式。"""
+        try:
+            return await asyncio.to_thread(service.report, query, style, top_k)
+        except (ValueError, ModelError) as error:
+            raise ValueError(str(error)) from None
+        except Exception as error:
+            logging.error("MCP report failed (%s)", type(error).__name__)
+            raise ValueError("报告生成失败，请检查数据库和模型服务") from None
 
     @server.tool()
     def list_documents() -> dict[str, Any]:
@@ -93,7 +105,7 @@ def create_server(service=None, *, streamable_http_path="/mcp", preload_local_ru
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="图文知识库 MCP 服务")
+    parser = argparse.ArgumentParser(description="文档知识库 MCP 服务（售后/售前）")
     parser.add_argument("--transport", choices=("stdio", "streamable-http"), default="stdio")
     parser.add_argument("--port", type=int, default=8101)
     parser.add_argument("--library", choices=("default", "presales"), default="default")

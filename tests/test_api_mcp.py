@@ -49,6 +49,7 @@ class WebRouteTests(unittest.TestCase):
         self.addCleanup(stack.close)
         settings = SimpleNamespace(data_dir=self.root, public_base_url=BASE_URL,
                                    search_similarity_threshold=0.4, search_top_k=5)
+        self.settings = settings
         self.db = MagicMock(spec=Database)
         stack.enter_context(patch("kb.app.load_settings", return_value=settings))
         stack.enter_context(patch("kb.app.Database", return_value=self.db))
@@ -58,6 +59,33 @@ class WebRouteTests(unittest.TestCase):
         self.model.embed.return_value = [[0.0, 1.0]]
         stack.enter_context(patch("kb.service.query_tokens", return_value="'审批'"))
         self.client = stack.enter_context(TestClient(app, base_url=BASE_URL, client=("127.0.0.1", 50000)))
+
+    def test_structure_route_returns_the_nested_unit_tree(self):
+        document_id = uuid4()
+        self.db.document.return_value = {"id": document_id, "filename": "标书.docx",
+                                         "status": "ready", "error": None}
+        self.db.units.return_value = [
+            {"id": 1, "parent_id": None, "unit_key": "root", "title": "", "level": 0,
+             "ordinal": 0, "block_start": 0, "block_end": 6, "page_start": None,
+             "page_end": None, "chunk_count": 2},
+            {"id": 2, "parent_id": 1, "unit_key": "chapter", "title": "第一章 项目概况",
+             "level": 1, "ordinal": 1, "block_start": 1, "block_end": 4, "page_start": 1,
+             "page_end": 2, "chunk_count": 3},
+        ]
+        response = self.client.get("/api/documents/" + str(document_id) + "/structure")
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["unit_count"], 2)
+        root, = body["units"]
+        self.assertEqual(root["title"], "")
+        chapter, = root["children"]
+        self.assertEqual((chapter["title"], chapter["chunk_count"]), ("第一章 项目概况", 3))
+        self.assertEqual((chapter["page_start"], chapter["page_end"]), (1, 2))
+
+    def test_structure_route_reports_a_missing_document(self):
+        self.db.document.return_value = None
+        response = self.client.get("/api/documents/" + str(uuid4()) + "/structure")
+        self.assertEqual(response.status_code, 400, response.text)
 
     def test_markdown_upload_preserves_relative_image_and_source(self):
         body = "# 流程\n![详情](images/chart.png)".encode()
@@ -100,7 +128,7 @@ class WebRouteTests(unittest.TestCase):
 
     def test_rejects_duplicate_names_invalid_paths_and_unsupported_uploads(self):
         cases = [
-            ["guide.md", "GUIDE.MD"], ["chapter/CON.md"], ["chapter/note.doc"],
+            ["guide.md", "GUIDE.MD"], ["chapter/CON.md"], ["chapter/note.txt"],
             ["D:/public/guide.md"], ["picture.png"],
         ]
         for filenames in cases:
@@ -146,6 +174,48 @@ class WebRouteTests(unittest.TestCase):
             self.assertEqual(self.client.get(source + "/assets/" + missing).status_code, 404)
         self.model.embed.assert_called_once_with(["审批"])
         self.db.search.assert_called_once()
+
+    def test_report_route_returns_an_extractive_digest_with_citations(self):
+        document_id = uuid4()
+        attempt = uuid4()
+        self.db.search.return_value = [image_hit(document_id, attempt)]
+        response = self.client.post("/api/report", json={"query": "审批", "top_k": 3})
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["mode"], "extractive")
+        self.assertIn("## 资料整合", data["report"])
+        self.assertIn("《流程.pdf》", data["report"])
+        self.assertIn("未配置生成模型", data["note"])
+        source, = data["sources"]
+        self.assertEqual(source["citation"], 1)
+        self.assertEqual(source["location_label"], "第 2 页")
+        self.assertEqual(source["document_id"], str(document_id))
+        self.assertIn("审批通过后归档", source["text"])
+
+    def test_report_route_uses_the_configured_generation_model(self):
+        self.settings.chat_base_url = "http://model.local/v1"
+        self.settings.chat_model = "qwen-test"
+        self.settings.chat_max_tokens = 2000
+        self.model.generate.return_value = ("## 结论\n审批由主管发起[1]。", {"total_tokens": 42})
+        self.db.search.return_value = [image_hit(uuid4(), uuid4())]
+        response = self.client.post("/api/report", json={"query": "审批", "style": "qa"})
+        self.assertEqual(response.status_code, 200, response.text)
+        data = response.json()
+        self.assertEqual(data["mode"], "model")
+        self.assertEqual(data["model"], "qwen-test")
+        self.assertEqual(data["usage"], {"total_tokens": 42})
+        self.assertIn("## 结论", data["report"])
+        self.model.generate.assert_called_once()
+        self.assertIn("直接回答", self.model.generate.call_args.args[1])
+
+    def test_report_validation_rejects_bad_query_style_and_range(self):
+        cases = (({"query": " "}, 400), ({"query": "审批", "style": "x"}, 422),
+                 ({"query": "审批", "top_k": 13}, 422), ({"query": "审批", "top_k": 0}, 422))
+        for payload, status in cases:
+            with self.subTest(payload=payload):
+                self.assertEqual(self.client.post("/api/report", json=payload).status_code, status)
+        self.db.search.assert_not_called()
+        self.model.generate.assert_not_called()
 
     def test_query_validation_and_model_or_database_errors(self):
         for payload, status in (({"query": " "}, 400), ({"query": "审批", "limit": 0}, 422)):
@@ -233,12 +303,14 @@ class McpProtocolTests(unittest.IsolatedAsyncioTestCase):
                 listing = await session.call_tool("list_documents", {})
                 detail = await session.call_tool("get_document", {"document_id": str(document_id), "limit": 1})
                 search = await session.call_tool("search_knowledge", {"query": "审批"})
+                report = await session.call_tool("generate_report", {"query": "审批", "top_k": 2})
                 invalid = await session.call_tool("get_document", {"document_id": "not-a-uuid"})
                 model.embed.side_effect = ModelError("向量服务暂不可用")
                 unavailable = await session.call_tool("search_knowledge", {"query": "审批"})
         self.assertIsNotNone(capabilities.tools)
-        self.assertEqual({tool.name for tool in inventory.tools}, {"list_documents", "get_document", "search_knowledge"})
-        for result in (listing, detail, search):
+        self.assertEqual({tool.name for tool in inventory.tools},
+                         {"list_documents", "get_document", "search_knowledge", "generate_report"})
+        for result in (listing, detail, search, report):
             self.assertFalse(result.isError, result.content)
         self.assertEqual(listing.structuredContent["documents"][0]["id"], str(document_id))
         detail_chunk, = detail.structuredContent["chunks"]
@@ -252,6 +324,8 @@ class McpProtocolTests(unittest.IsolatedAsyncioTestCase):
                          {str(document_id), str(duplicate["document_id"])})
         self.assertTrue(all(source["asset_url"] and source["location"]["bbox"]
                             for source in search_hit["sources"]))
+        self.assertEqual(report.structuredContent["mode"], "extractive")
+        self.assertEqual(report.structuredContent["sources"][0]["citation"], 1)
         self.assertTrue(invalid.isError)
         self.assertTrue(unavailable.isError)
         self.assertIn("向量服务暂不可用", unavailable.content[0].text)

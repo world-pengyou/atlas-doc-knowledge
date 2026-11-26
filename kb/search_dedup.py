@@ -47,8 +47,9 @@ def _adjacent_overlap(left, right):
                 or loc_a["bbox"] != loc_b.get("bbox")
                 or loc_a.get("preview") != loc_b.get("preview")):
             return 0
-    elif loc_a.get("format") == "docx" or loc_b.get("format") == "docx":
-        if (loc_a.get("format") != "docx" or loc_b.get("format") != "docx"
+    elif loc_a.get("format") in {"docx", "doc"} or loc_b.get("format") in {"docx", "doc"}:
+        if (loc_a.get("format") != loc_b.get("format")
+                or loc_a.get("format") not in {"docx", "doc"}
                 or not _integer(loc_a.get("paragraph")) or loc_a["paragraph"] < 1
                 or any(loc_a.get(key) != loc_b.get(key) for key in
                        ("paragraph", "table", "row", "cell", "image", "heading", "preview"))):

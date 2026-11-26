@@ -282,7 +282,7 @@ class LibraryLifespanTests(unittest.IsolatedAsyncioTestCase):
 
 
 class LibraryMcpTests(unittest.IsolatedAsyncioTestCase):
-    async def test_servers_bind_all_three_tools_to_their_own_library(self):
+    async def test_servers_bind_every_tool_to_their_own_library(self):
         identifier = uuid4()
         for library, prefix in (("default", ""), ("presales", "/presales")):
             with self.subTest(library=library):
@@ -307,15 +307,20 @@ class LibraryMcpTests(unittest.IsolatedAsyncioTestCase):
                         listed = await session.call_tool("list_documents", {})
                         detail = await session.call_tool("get_document", {"document_id": str(identifier)})
                         result = await session.call_tool("search_knowledge", {"query": "售前"})
+                        report = await session.call_tool("generate_report", {"query": "售前"})
                 self.assertEqual({tool.name for tool in tools.tools},
-                                 {"search_knowledge", "list_documents", "get_document"})
-                for response in (listed, detail, result):
+                                 {"search_knowledge", "list_documents", "get_document",
+                                  "generate_report"})
+                for response in (listed, detail, result, report):
                     self.assertFalse(response.isError, response.content)
                 self.assertEqual(listed.structuredContent["documents"][0]["filename"], library + ".md")
                 self.assertEqual(detail.structuredContent["chunks"][0]["text"], hit["text"])
                 selected, = result.structuredContent["results"]
                 self.assertEqual(selected["text"], hit["text"])
                 self.assertEqual(selected["source_url"],
+                                 BASE_URL + prefix + f"/api/documents/{identifier}/source")
+                self.assertEqual(report.structuredContent["mode"], "extractive")
+                self.assertEqual(report.structuredContent["sources"][0]["source_url"],
                                  BASE_URL + prefix + f"/api/documents/{identifier}/source")
 
 

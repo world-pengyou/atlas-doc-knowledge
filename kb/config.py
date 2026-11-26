@@ -32,6 +32,10 @@ class Settings:
     model_timeout: float = 120
     search_similarity_threshold: float = 0.40
     search_top_k: int = 5
+    chat_base_url: str = ""
+    chat_api_key: str = ""
+    chat_model: str = ""
+    chat_max_tokens: int = 2_000
     web_host: str = "127.0.0.1"
     web_allowed_hosts: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
     web_allowed_networks: tuple[str, ...] = ("127.0.0.0/8", "::1/128")
@@ -64,7 +68,7 @@ def library_settings(settings, library="default"):
     # A different spelling of localhost or a different user must not disguise
     # reusing the original database. Separate database names are mandatory.
     if not presales.get("dbname") or presales["dbname"] == original.get("dbname"):
-        raise ValueError("售前知识库必须使用独立数据库名，不能与原知识库共库")
+        raise ValueError("售前知识库必须使用独立数据库名，不能与售后知识库共库")
     return replace(settings, database_url=value, data_dir=settings.data_dir / "presales",
                    public_base_url=settings.public_base_url + "/presales")
 
@@ -157,8 +161,15 @@ def load_settings() -> Settings:
         raise ValueError("SEARCH_TOP_K 必须为 1 到 20 之间的整数") from None
     if not 1 <= search_top_k <= 20:
         raise ValueError("SEARCH_TOP_K 必须为 1 到 20 之间的整数")
+    try:
+        chat_max_tokens = int(os.getenv("CHAT_MAX_TOKENS", "2000"))
+    except ValueError:
+        raise ValueError("CHAT_MAX_TOKENS 必须为 256 到 16000 之间的整数") from None
+    if not 256 <= chat_max_tokens <= 16000:
+        raise ValueError("CHAT_MAX_TOKENS 必须为 256 到 16000 之间的整数")
     public_url = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
     for name, value in (("VISION_BASE_URL", os.getenv("VISION_BASE_URL", "")),
+                        ("CHAT_BASE_URL", os.getenv("CHAT_BASE_URL", "")),
                         ("EMBEDDING_BASE_URL", os.getenv("EMBEDDING_BASE_URL", "")),
                         ("PUBLIC_BASE_URL", public_url)):
         if not value:
@@ -182,6 +193,10 @@ def load_settings() -> Settings:
         vision_base_url=os.getenv("VISION_BASE_URL", "").rstrip("/"),
         vision_api_key=os.getenv("VISION_API_KEY", ""),
         vision_model=os.getenv("VISION_MODEL", ""),
+        chat_base_url=os.getenv("CHAT_BASE_URL", "").rstrip("/"),
+        chat_api_key=os.getenv("CHAT_API_KEY", ""),
+        chat_model=os.getenv("CHAT_MODEL", ""),
+        chat_max_tokens=chat_max_tokens,
         embedding_base_url=os.getenv("EMBEDDING_BASE_URL", "").rstrip("/"),
         embedding_api_key=os.getenv("EMBEDDING_API_KEY", ""),
         embedding_model=os.getenv("EMBEDDING_MODEL", "bge-m3"),
